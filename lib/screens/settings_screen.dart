@@ -5,6 +5,7 @@ import '../core/widgets.dart';
 import '../main.dart';
 import '../services/launcher_service.dart';
 import '../services/notification_service.dart';
+import 'auth_screen.dart';
 import 'reminders_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -39,7 +40,7 @@ class SettingsScreen extends StatelessWidget {
     final selected = await showDialog<String>(context: context, builder: (ctx) => SimpleDialog(
       title: const Text('Pilih tema'),
       children: [
-        for (final t in ['Terang', 'Gelap']) SimpleDialogOption(
+        for (final t in ['Terang']) SimpleDialogOption(
           onPressed: () => Navigator.pop(ctx, t),
           child: Row(children: [Icon(s.theme == t ? Icons.radio_button_checked : Icons.radio_button_off), const SizedBox(width: 10), Text(t)]),
         ),
@@ -61,7 +62,9 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(padding: const EdgeInsets.all(16), children: [
         group('Akun'),
         row(Icons.person_outline, 'Edit Profil', onTap: () => _editProfile(context)),
-        row(Icons.lock_outline, 'Keamanan Akun', trailing: 'Lokal'),
+        row(Icons.cloud_outlined, 'Akun cloud',
+            trailing: s.signedIn ? (s.userEmail ?? 'Masuk') : 'Belum masuk',
+            onTap: () => s.signedIn ? null : Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen()))),
         group('Notifikasi'),
         row(Icons.notifications_none, 'Pengingat', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RemindersScreen()))),
         row(Icons.notifications_active_outlined, 'Uji Notifikasi', onTap: () async {
@@ -77,11 +80,63 @@ class SettingsScreen extends StatelessWidget {
         group('Tampilan'),
         row(Icons.brightness_6_outlined, 'Tema', trailing: s.theme, onTap: () => _chooseTheme(context)),
         group('Sinkronisasi'),
-        const SnoopCard(child: Text('Backend opsional. Atur SUPABASE_URL dan SUPABASE_ANON_KEY saat build untuk mengaktifkan koneksi. Foto Google Drive memerlukan konfigurasi OAuth/Edge Function terpisah.')),
+        _SyncCard(),
         const SizedBox(height: 16),
-        PillButton(label: 'Keluar', dark: false, onPressed: () => showDialog(context: context, builder: (ctx) => AlertDialog(
-          title: const Text('Keluar'), content: const Text('Autentikasi cloud hanya tersedia setelah konfigurasi Supabase.'),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Tutup'))]))),
+        if (s.signedIn)
+          PillButton(label: 'Keluar dari akun cloud', dark: false, onPressed: () => showDialog(context: context, builder: (ctx) => AlertDialog(
+            title: const Text('Keluar?'), content: const Text('Data lokal tetap ada. Absensi baru akan antre sampai Anda masuk lagi.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+              FilledButton(onPressed: () { Navigator.pop(ctx); s.signOut(); }, child: const Text('Keluar')),
+            ])))
+        else
+          PillButton(label: 'Masuk / daftar', onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen()))),
+      ]),
+    );
+  }
+}
+
+/// Status koneksi, akun, antrean, dan error terakhir, supaya masalah database bisa dilacak.
+class _SyncCard extends StatefulWidget {
+  @override
+  State<_SyncCard> createState() => _SyncCardState();
+}
+
+class _SyncCardState extends State<_SyncCard> {
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context);
+    Widget line(IconData i, String t, {Color? c}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(i, size: 16, color: c ?? C.text2), const SizedBox(width: 8),
+            Expanded(child: Text(t, style: TextStyle(fontSize: 13, color: c ?? C.text))),
+          ]),
+        );
+    final err = s.sync.lastError;
+    return SnoopCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        line(s.backendConfigured ? Icons.check_circle_outline : Icons.error_outline,
+            s.backendConfigured ? 'Server: terhubung' : (s.backendError ?? 'Server: belum dikonfigurasi'),
+            c: s.backendConfigured ? C.success : C.error),
+        line(s.signedIn ? Icons.person_outline : Icons.person_off_outlined,
+            s.signedIn ? 'Akun: ${s.userEmail ?? 'masuk'}' : 'Akun: belum masuk (data hanya di perangkat)',
+            c: s.signedIn ? C.success : C.warning),
+        line(Icons.sync, 'Antrean sinkronisasi: ${s.sync.pending} item'),
+        if (err != null) line(Icons.report_gmailerrorred_outlined, 'Error terakhir: $err', c: C.error),
+        const SizedBox(height: 8),
+        PillButton(
+          dark: false,
+          icon: Icons.sync,
+          label: _busy ? 'Menyinkronkan...' : 'Sinkronkan sekarang',
+          onPressed: _busy ? null : () async {
+            setState(() => _busy = true);
+            await s.sync.retryPending();
+            if (mounted) setState(() => _busy = false);
+          },
+        ),
       ]),
     );
   }

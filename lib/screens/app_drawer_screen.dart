@@ -4,7 +4,11 @@ import '../main.dart';
 import '../services/launcher_service.dart';
 
 class AppDrawerScreen extends StatefulWidget {
-  const AppDrawerScreen({super.key});
+  /// Dipanggil saat pengguna menekan tombol kembali ke Home (mode tertanam di PageView).
+  final VoidCallback? onClose;
+  /// True ketika halaman ini sedang terlihat; dipakai untuk menyegarkan daftar aplikasi.
+  final bool active;
+  const AppDrawerScreen({super.key, this.onClose, this.active = true});
   @override
   State<AppDrawerScreen> createState() => _AppDrawerScreenState();
 }
@@ -30,7 +34,21 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
   @override
   void initState() {
     super.initState();
-    LauncherService.apps().then((a) { if (mounted) setState(() { _apps = a; _loading = false; }); });
+    _apps = LauncherService.cached ?? [];
+    _loading = _apps.isEmpty;
+    _load(force: false);
+  }
+
+  @override
+  void didUpdateWidget(covariant AppDrawerScreen old) {
+    super.didUpdateWidget(old);
+    // Segarkan secara senyap saat halaman dibuka kembali, dibatasi 30 detik.
+    if (widget.active && !old.active && LauncherService.stale) _load(force: true);
+  }
+
+  Future<void> _load({required bool force}) async {
+    final a = await LauncherService.apps(force: force);
+    if (mounted) setState(() { _apps = a; _loading = false; });
   }
 
   Widget _tile(AppEntry a) {
@@ -44,7 +62,7 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Container(
           width: 52, height: 52,
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 6, offset: Offset(0, 2))]),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: C.border, width: .6)),
           child: a.icon != null
               ? Padding(padding: const EdgeInsets.all(6), child: Image.memory(a.icon!, gaplessPlayback: true, cacheWidth: 96))
               : Center(child: Text(a.label.characters.first, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18))),
@@ -69,11 +87,14 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
     return Scaffold(
       body: SafeArea(
         child: GestureDetector(
-          onVerticalDragEnd: (d) { if ((d.primaryVelocity ?? 0) > 600) Navigator.of(context).pop(); },
           child: CustomScrollView(slivers: [
             SliverPadding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 8), sliver: SliverToBoxAdapter(child: Row(children: [
-              IconButton(onPressed: () => Navigator.of(context).pop(), icon: const Icon(Icons.keyboard_arrow_down)),
-              Text('App Drawer', style: Theme.of(context).textTheme.headlineSmall),
+              Expanded(child: Text('Aplikasi', style: Theme.of(context).textTheme.headlineSmall)),
+              IconButton(
+                tooltip: 'Kembali ke beranda',
+                onPressed: widget.onClose ?? () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.chevron_right_rounded),
+              ),
             ]))),
             SliverPadding(padding: const EdgeInsets.symmetric(horizontal: 16), sliver: SliverToBoxAdapter(child: TextField(
               onChanged: (v) => setState(() => _q = v),

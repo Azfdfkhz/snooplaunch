@@ -52,27 +52,48 @@ class Memory {
   String? placeName;
   String description;
   UploadStatus upload;
-  Memory({required this.id, required this.title, this.scheduleId, this.photoPath, required this.capturedAt, this.lat, this.lng, this.accuracy, this.placeName, this.description = '', this.upload = UploadStatus.pending});
+  String? driveUrl;
+  Memory({required this.id, required this.title, this.scheduleId, this.photoPath, required this.capturedAt, this.lat, this.lng, this.accuracy, this.placeName, this.description = '', this.upload = UploadStatus.pending, this.driveUrl});
   String get meta => '${capturedAt.day} ${kMonths[capturedAt.month - 1].substring(0, 3)} · ${hm(capturedAt)} WIB';
   Map<String, dynamic> toJson() => {
         'id': id, 'title': title, 'scheduleId': scheduleId, 'photo': photoPath, 'at': capturedAt.toIso8601String(),
-        'lat': lat, 'lng': lng, 'acc': accuracy, 'place': placeName, 'desc': description, 'upload': upload.index,
+        'lat': lat, 'lng': lng, 'acc': accuracy, 'place': placeName, 'desc': description, 'upload': upload.index, 'drive': driveUrl,
       };
   factory Memory.fromJson(Map<String, dynamic> j) => Memory(
       id: j['id'], title: j['title'], scheduleId: j['scheduleId'], photoPath: j['photo'], capturedAt: DateTime.parse(j['at']),
-      lat: j['lat'], lng: j['lng'], accuracy: j['acc'], placeName: j['place'], description: j['desc'] ?? '', upload: UploadStatus.values[j['upload']]);
+      lat: (j['lat'] as num?)?.toDouble(), lng: (j['lng'] as num?)?.toDouble(), accuracy: (j['acc'] as num?)?.toDouble(), placeName: j['place'], description: j['desc'] ?? '', upload: UploadStatus.values[j['upload'] ?? 0], driveUrl: j['drive']);
 }
 
 enum AttendanceStatus { notCheckedIn, pending, present, late, checkedOut, needsAttention }
 
 class Attendance {
-  final String id;
-  final String day; // yyyy-mm-dd
+  String id; // diganti dengan id server bila server sudah punya catatan hari itu
+  final String day; // yyyy-mm-dd (hari perangkat saat absen)
   DateTime checkInAt;
   DateTime? checkOutAt;
   AttendanceStatus status;
-  Attendance({required this.id, required this.day, required this.checkInAt, this.checkOutAt, required this.status});
-  Map<String, dynamic> toJson() => {'id': id, 'day': day, 'in': checkInAt.toIso8601String(), 'out': checkOutAt?.toIso8601String(), 'status': status.index};
+  /// True bila seluruh perubahan sudah dikonfirmasi server. Selama false, UI harus
+  /// menampilkan "menunggu sinkronisasi" dan bukan "terverifikasi".
+  bool synced;
+  /// True bila server memakai waktu perangkat (absen dikirim belakangan / offline).
+  bool offlineTime;
+  double? inLat, inLng, inAcc, outLat, outLng, outAcc;
+  Attendance({
+    required this.id, required this.day, required this.checkInAt, this.checkOutAt, required this.status,
+    this.synced = false, this.offlineTime = false,
+    this.inLat, this.inLng, this.inAcc, this.outLat, this.outLng, this.outAcc,
+  });
+  Map<String, dynamic> toJson() => {
+        'id': id, 'day': day, 'in': checkInAt.toIso8601String(), 'out': checkOutAt?.toIso8601String(), 'status': status.index,
+        'synced': synced, 'offline': offlineTime,
+        'inLat': inLat, 'inLng': inLng, 'inAcc': inAcc, 'outLat': outLat, 'outLng': outLng, 'outAcc': outAcc,
+      };
+  static double? _d(dynamic v) => (v as num?)?.toDouble();
   factory Attendance.fromJson(Map<String, dynamic> j) => Attendance(
-      id: j['id'], day: j['day'], checkInAt: DateTime.parse(j['in']), checkOutAt: j['out'] == null ? null : DateTime.parse(j['out']), status: AttendanceStatus.values[j['status']]);
+      id: j['id'], day: j['day'], checkInAt: DateTime.parse(j['in']),
+      checkOutAt: j['out'] == null ? null : DateTime.parse(j['out']),
+      status: AttendanceStatus.values[j['status']],
+      synced: j['synced'] ?? false, offlineTime: j['offline'] ?? false,
+      inLat: _d(j['inLat']), inLng: _d(j['inLng']), inAcc: _d(j['inAcc']),
+      outLat: _d(j['outLat']), outLng: _d(j['outLng']), outAcc: _d(j['outAcc']));
 }

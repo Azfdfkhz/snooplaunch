@@ -78,8 +78,10 @@ class MemoryDetailScreen extends StatelessWidget {
         }),
       ]),
       body: ListView(padding: const EdgeInsets.all(16), children: [
-        ClipRRect(borderRadius: BorderRadius.circular(20), child: SizedBox(height: 260, child: m.photoPath != null && File(m.photoPath!).existsSync()
-            ? Image.file(File(m.photoPath!), fit: BoxFit.cover, cacheWidth: 1000) : Container(color: C.soft))),
+        ClipRRect(borderRadius: BorderRadius.circular(20), child: SizedBox(height: 260, child: m.photoPath != null
+            ? Image.file(File(m.photoPath!), fit: BoxFit.cover, cacheWidth: 1000,
+                errorBuilder: (_, __, ___) => Container(color: C.soft, child: const Icon(Icons.broken_image_outlined, color: C.text2)))
+            : Container(color: C.soft))),
         const SizedBox(height: 12),
         if (sched != null) const Align(alignment: Alignment.centerLeft, child: StatusChip('Tertaut ke jadwal')),
         const SizedBox(height: 8),
@@ -92,6 +94,15 @@ class MemoryDetailScreen extends StatelessWidget {
           if (m.description.isNotEmpty) row(Icons.notes, 'Deskripsi', m.description),
           row(Icons.cloud_upload_outlined, 'Status unggah', up),
         ])),
+        if (m.driveUrl != null) Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: PillButton(icon: Icons.cloud_done_outlined, label: 'Buka di Google Drive', dark: false, onPressed: () async {
+            final ok = await launchUrl(Uri.parse(m.driveUrl!), mode: LaunchMode.externalApplication);
+            if (!ok && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Drive tidak dapat dibuka.')));
+            }
+          }),
+        ),
         if (m.lat != null && m.lng != null) Padding(
           padding: const EdgeInsets.only(top: 12),
           child: PillButton(icon: Icons.map_outlined, label: 'Lihat di Google Maps', onPressed: () async {

@@ -34,7 +34,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
       );
       if (ok != true || !mounted) return;
       final now = DateTime.now(); // waktu dicatat saat dikonfirmasi
-      final saved = widget.isOut ? s.recordCheckOut(at: now) : s.recordCheckIn(at: now);
+      final saved = widget.isOut
+          ? s.recordCheckOut(at: now, lat: res.lat, lng: res.lng, acc: res.accuracy)
+          : s.recordCheckIn(at: now, lat: res.lat, lng: res.lng, acc: res.accuracy);
       if (!saved) {
         _snack('Absensi sudah tercatat hari ini.');
       } else {

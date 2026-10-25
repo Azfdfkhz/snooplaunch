@@ -11,10 +11,26 @@ class AppEntry {
 class LauncherService {
   static const _ch = MethodChannel('snoop/launcher');
 
-  static Future<List<AppEntry>> apps() async {
+  static List<AppEntry>? _cache;
+  static DateTime? _cachedAt;
+
+  /// Daftar terakhir yang berhasil dimuat (null bila belum pernah dimuat).
+  static List<AppEntry>? get cached => _cache;
+
+  /// True bila cache belum ada atau sudah lebih dari 30 detik.
+  static bool get stale => _cachedAt == null || DateTime.now().difference(_cachedAt!) > const Duration(seconds: 30);
+
+  /// Memuat aplikasi terpasang. Hasil di-cache (ikon dan label) agar membuka
+  /// App Drawer berulang tidak memuat ulang dari sistem; `force` memaksa muat ulang.
+  static Future<List<AppEntry>> apps({bool force = false}) async {
+    if (!force && _cache != null) return _cache!;
     try {
       final raw = await _ch.invokeListMethod<Map>('getApps') ?? [];
-      return raw.map((m) => AppEntry(m['label'] as String, m['package'] as String, m['icon'] as Uint8List?)).toList();
+      final list = raw.map((m) => AppEntry(m['label'] as String, m['package'] as String, m['icon'] as Uint8List?)).toList()
+        ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+      _cache = list;
+      _cachedAt = DateTime.now();
+      return list;
     } on MissingPluginException {
       return _demo; // dijalankan di non-Android / belum ada channel
     } on PlatformException {

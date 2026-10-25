@@ -51,7 +51,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final days = List.generate(7, (i) => monday.add(Duration(days: i)));
 
     (String, Color, Color) chip(ScheduleStatus st) => switch (st) {
-          ScheduleStatus.completed => ('Selesai', C.mint, const Color(0xFF3C6B4F)),
+          ScheduleStatus.completed => ('Selesai', C.mint, C.success),
           ScheduleStatus.inProgress => ('Berlangsung', C.blue, const Color(0xFF3B6F94)),
           ScheduleStatus.skipped => ('Dilewati', C.soft, C.text2),
           ScheduleStatus.cancelled => ('Dibatalkan', C.soft, C.text2),

@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 import 'package:uuid/uuid.dart';
 import 'models.dart';
+import '../services/backend_service.dart';
 import '../services/notification_service.dart';
 import '../services/sync_service.dart';
 
@@ -30,14 +34,23 @@ class AppState extends ChangeNotifier {
   Set<String> favorites = {};
   String theme = 'Terang';
   bool busy = false; // cegah tap ganda
-  final SyncService sync = HybridSyncService();
+  final HybridSyncService sync = HybridSyncService();
+  StreamSubscription? _authSub;
+  StreamSubscription? _connSub;
 
   Future<void> load() async {
     _p = await SharedPreferences.getInstance();
+    // Data rusak/lama tidak boleh membuat aplikasi gagal start: elemen yang tidak terbaca dilewati.
     List<T> readList<T>(String k, T Function(Map<String, dynamic>) f) {
       final raw = _p!.getString(k);
       if (raw == null) return [];
-      return (jsonDecode(raw) as List).map((e) => f(e as Map<String, dynamic>)).toList();
+      final out = <T>[];
+      try {
+        for (final e in jsonDecode(raw) as List) {
+          try { out.add(f(Map<String, dynamic>.from(e as Map))); } catch (_) {}
+        }
+      } catch (_) {}
+      return out;
     }
 
     name = _p!.getString('profile_name') ?? name;
@@ -71,22 +84,125 @@ class AppState extends ChangeNotifier {
         Reminder(id: 'r4', title: 'Dokumentasi Kegiatan', detail: 'Setiap selesai tugas', type: 'dokumentasi', atMin: 15 * 60),
       ];
     }
-    // Reconcile reminders on every startup so edits and missed scheduling are repaired.
+    sync.workStartMin = workStartMin;
+    sync.toleranceMin = lateToleranceMin;
+    notifyListeners();
+  }
+
+  /// Dipanggil setelah runApp: inisialisasi backend, notifikasi, dan sinkronisasi tanpa
+  /// menahan tampilan pertama (izin notifikasi dan jaringan bisa lambat).
+  Future<void> startBackground() async {
+    sync.onAttendanceApplied = _applyAttendance;
+    sync.onMemoryUploaded = _memoryUploaded;
+    sync.onMemoryUploadFailed = _memoryUploadFailed;
+    sync.onStatusChanged = notifyListeners;
+    try { await BackendService.instance.initialize(); } catch (_) {}
+    if (BackendService.instance.configured) {
+      try {
+        _authSub = BackendService.instance.authChanges.listen((_) {
+          notifyListeners();
+          sync.retryPending();
+        });
+      } catch (_) {}
+      try {
+        _connSub = Connectivity().onConnectivityChanged.listen((r) {
+          if (!r.contains(ConnectivityResult.none)) sync.retryPending();
+        });
+      } catch (_) {}
+    }
+    notifyListeners();
     try {
       await NotificationService.instance.initialize();
       for (final r in reminders) {
         if (r.enabled) {
-          await NotificationService.instance.scheduleDaily(
-            id: r.id, title: r.title, body: r.detail, minuteOfDay: r.atMin);
+          await NotificationService.instance.scheduleDaily(id: r.id, title: r.title, body: r.detail, minuteOfDay: r.atMin);
         } else {
           await NotificationService.instance.cancel(r.id);
         }
       }
     } catch (_) {
-      // Local data must remain usable if OS notification permissions are unavailable.
+      // Data lokal tetap berfungsi bila izin notifikasi tidak tersedia.
     }
     await sync.retryPending();
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    _connSub?.cancel();
+    super.dispose();
+  }
+
+  // ---- Akun cloud ----
+  bool get backendConfigured => BackendService.instance.configured;
+  bool get signedIn => BackendService.instance.signedIn;
+  String? get userEmail => BackendService.instance.email;
+  String? get backendError => BackendService.instance.initError;
+
+  Future<String?> signIn(String email, String password) async {
+    try {
+      await BackendService.instance.signIn(email, password);
+      notifyListeners();
+      return null;
+    } on AuthException catch (e) {
+      return e.message;
+    } catch (e) {
+      return 'Tidak dapat terhubung: $e';
+    }
+  }
+
+  /// Mengembalikan (berhasil masuk, pesan).
+  Future<(bool, String)> signUp(String email, String password) async {
+    try {
+      final res = await BackendService.instance.signUp(email, password);
+      notifyListeners();
+      if (res.session != null) return (true, 'Akun dibuat dan sudah masuk.');
+      return (false, 'Akun dibuat. Buka email untuk konfirmasi, lalu masuk.');
+    } on AuthException catch (e) {
+      return (false, e.message);
+    } catch (e) {
+      return (false, 'Tidak dapat terhubung: $e');
+    }
+  }
+
+  Future<void> signOut() async {
+    try { await BackendService.instance.signOut(); } catch (_) {}
     notifyListeners();
+  }
+
+  // ---- Callback sinkronisasi ----
+  void _applyAttendance(String localId, Map<String, dynamic> row) {
+    final a = attendance.where((e) => e.id == localId).firstOrNull;
+    if (a == null) return;
+    a.id = row['id'] as String;
+    a.checkInAt = DateTime.parse(row['check_in_at'] as String).toLocal();
+    final out = row['check_out_at'] as String?;
+    if (out != null) a.checkOutAt = DateTime.parse(out).toLocal();
+    a.status = switch (row['status']) {
+      'late' => AttendanceStatus.late,
+      'checked_out' => AttendanceStatus.checkedOut,
+      'needs_attention' => AttendanceStatus.needsAttention,
+      'pending' => AttendanceStatus.pending,
+      _ => AttendanceStatus.present,
+    };
+    a.offlineTime = row['time_source'] == 'device_queued' || row['check_out_time_source'] == 'device_queued';
+    a.synced = a.checkOutAt == null || out != null;
+    changed();
+  }
+
+  void _memoryUploaded(String id, String? url) {
+    final m = memories.where((e) => e.id == id).firstOrNull;
+    if (m == null) return;
+    m.upload = UploadStatus.uploaded;
+    m.driveUrl = url;
+    changed();
+  }
+
+  void _memoryUploadFailed(String id) {
+    final m = memories.where((e) => e.id == id).firstOrNull;
+    if (m == null || m.upload == UploadStatus.uploaded) return;
+    m.upload = UploadStatus.failed;
+    changed();
   }
 
   Future<void> _save() async {
@@ -127,26 +243,58 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// Kehadiran minggu ini (Senin..Minggu) dari data aktual.
+  List<bool> get weekPresence {
+    final now = DateTime.now();
+    final monday = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+    final days = attendance.map((a) => a.day).toSet();
+    return List.generate(7, (i) => days.contains(dayKey(monday.add(Duration(days: i)))));
+  }
+
+  /// Hari kerja beruntun dengan absensi. Akhir pekan tanpa absensi tidak memutus rangkaian.
+  int get streak {
+    final days = attendance.map((a) => a.day).toSet();
+    var d = DateTime.now();
+    if (!days.contains(dayKey(d))) d = d.subtract(const Duration(days: 1));
+    var n = 0;
+    for (var i = 0; i < 366; i++) {
+      if (days.contains(dayKey(d))) {
+        n++;
+      } else if (d.weekday < DateTime.saturday) {
+        break;
+      }
+      d = d.subtract(const Duration(days: 1));
+    }
+    return n;
+  }
+
+  int get tasksDone => schedule.where((s) => s.status == ScheduleStatus.completed).length;
+
   AttendanceStatus get todayStatus => today?.status ?? AttendanceStatus.notCheckedIn;
 
   /// Mengembalikan false bila sudah absen masuk (cegah duplikasi).
-  bool recordCheckIn({required DateTime at}) {
+  bool recordCheckIn({required DateTime at, double? lat, double? lng, double? acc}) {
     if (today != null) return false;
     final limit = workStartMin + lateToleranceMin;
     final late = at.hour * 60 + at.minute > limit;
     attendance.add(Attendance(
         id: _uuid.v4(), day: dayKey(at), checkInAt: at,
-        status: late ? AttendanceStatus.late : AttendanceStatus.present));
+        status: late ? AttendanceStatus.late : AttendanceStatus.present,
+        inLat: lat, inLng: lng, inAcc: acc)); // status lokal sementara; synced=false sampai server konfirmasi
     changed();
+    sync.workStartMin = workStartMin;
+    sync.toleranceMin = lateToleranceMin;
     sync.pushAttendance(attendance.last).catchError((_) {});
     return true;
   }
 
-  bool recordCheckOut({required DateTime at}) {
+  bool recordCheckOut({required DateTime at, double? lat, double? lng, double? acc}) {
     final t = today;
     if (t == null || t.checkOutAt != null) return false;
     t.checkOutAt = at;
     t.status = AttendanceStatus.checkedOut;
+    t.synced = false;
+    t.outLat = lat; t.outLng = lng; t.outAcc = acc;
     changed();
     sync.pushAttendance(t).catchError((_) {});
     return true;
