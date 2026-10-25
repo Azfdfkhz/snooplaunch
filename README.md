@@ -1,4 +1,4 @@
-# SNOOP — Smart PKL Launcher (Flutter, Android)
+# SNOOP — Launcher (Flutter, Android)
 
 ## Cara menjalankan
 1. Pasang Flutter SDK (>= 3.22, Dart >= 3.3).
