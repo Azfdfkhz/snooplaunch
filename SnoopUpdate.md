@@ -1,540 +1,362 @@
-# PRODUCT REQUIREMENTS DOCUMENT (PRD)
-# SNOOP Launcher — Fresh UI & PKL Productivity
+# SNOOP — Product Requirements Document
+## Update 1.0.0 — Launcher UI/UX Redesign
 
-**Versi:** 1.0.0  
-**Status:** Draft untuk implementasi  
+**Produk:** SNOOP — Smart PKL Launcher  
+**Versi dokumen:** PRD Update 1.0.0  
+**Jenis pembaruan:** UI/UX Redesign & Launcher Experience  
 **Platform utama:** Android  
-**Produk:** Launcher Android personal untuk produktivitas dan absensi Praktik Kerja Lapangan (PKL)
+**Teknologi:** Flutter, Dart, dan integrasi native Android yang sudah tersedia  
+**Status:** Spesifikasi untuk implementasi
 
 ---
 
-## 1. Ringkasan Produk
+## 1. Latar Belakang
 
-SNOOP adalah launcher Android yang menggabungkan fungsi home screen, app drawer, pengingat aktivitas, manajemen jadwal, dan sistem absensi PKL dalam satu antarmuka yang ringan.
+SNOOP merupakan aplikasi launcher Android yang juga berfungsi sebagai pendamping kegiatan Praktik Kerja Lapangan (PKL). Aplikasi menggabungkan akses aplikasi Android dengan informasi dan aktivitas PKL, termasuk absensi, jadwal, pengingat, serta dokumentasi.
 
-Pengembangan versi ini berfokus pada pembaruan UI/UX secara menyeluruh berdasarkan referensi desain yang diberikan pengguna, optimalisasi performa, serta pengembangan sistem absensi dari penyimpanan lokal menjadi sistem yang terintegrasi dengan backend.
+Pada versi sebelumnya, perhatian utama masih perlu diarahkan pada pengalaman visual launcher. Tampilan beranda berpotensi lebih terasa seperti dashboard aplikasi produktivitas daripada launcher yang digunakan setiap hari.
 
-Desain harus mempertahankan karakter visual referensi berupa komposisi kartu membulat, kontras visual yang kuat, tipografi modern, ilustrasi atau ikon terpilih, serta tata letak yang terstruktur. Warna boleh berbeda dari referensi.
+Update 1.0.0 bertujuan memperbaiki identitas visual, hierarki informasi, navigasi, serta pengalaman penggunaan launcher dengan mengacu pada referensi Smart Launcher yang diberikan.
 
-### Tujuan utama
+Pembaruan harus mempertahankan fungsi yang sudah berjalan dan tidak mengubah aturan bisnis, mekanisme autentikasi, maupun sistem penyimpanan tanpa kebutuhan teknis yang jelas.
 
-1. Menciptakan tampilan launcher yang fresh, modern, konsisten, dan tidak terlihat seperti template generik.
-2. Mengurangi penggunaan sumber daya dan meningkatkan responsivitas aplikasi.
-3. Menjadikan swipe horizontal sebagai navigasi utama antara Home dan App Drawer.
-4. Menghadirkan absensi masuk dan pulang yang benar-benar tersimpan secara online.
-5. Mengintegrasikan jadwal, tugas, pengingat minum, istirahat, dan aktivitas PKL.
-6. Mempertahankan fitur lama yang masih relevan dan memperbaiki implementasinya tanpa menulis ulang seluruh proyek secara tidak perlu.
+## 2. Visi Produk
 
-## 2. Referensi Desain
+Menjadikan SNOOP sebagai launcher Android yang personal, praktis, modern, dan terintegrasi dengan aktivitas PKL.
 
-Gambar referensi dari pengguna menjadi acuan untuk prinsip desain, bukan untuk menyalin warna atau konten aslinya.
+SNOOP harus memungkinkan pengguna:
+- Mengakses aplikasi Android dengan cepat.
+- Melihat informasi PKL yang relevan tanpa membuka banyak halaman.
+- Melakukan tindakan penting melalui pintasan yang jelas.
+- Menikmati antarmuka yang konsisten, responsif, dan mudah dipahami.
 
-### Karakteristik visual yang wajib dipertahankan
+**Prinsip utama:** launcher menjadi pusat pengalaman, sedangkan fitur PKL menjadi bagian yang menyatu dengan launcher.
 
-- Kartu dengan radius besar dan bentuk geometris yang konsisten.
-- Hierarki konten yang jelas antara judul, angka, status, dan informasi pendukung.
-- Kontras yang tegas antara permukaan utama dan komponen aksen.
-- Komposisi modular yang memungkinkan berbagai jenis informasi disajikan dalam satu layar.
-- Ikon dan ilustrasi digunakan secara selektif, bukan sebagai dekorasi berlebihan.
-- Tombol utama memiliki bentuk, ukuran, dan posisi yang konsisten.
-- Penggunaan whitespace yang terukur, bukan jarak kosong yang terlalu besar.
-- Tampilan setiap halaman memiliki identitas yang jelas tetapi tetap menggunakan design system yang sama.
+## 3. Tujuan Pembaruan
 
-### Adaptasi untuk SNOOP
+1. Memperkuat identitas visual SNOOP sebagai launcher Android.
+2. Mengurangi kepadatan informasi yang tidak diperlukan pada beranda.
+3. Mempermudah akses aplikasi favorit dan seluruh aplikasi.
+4. Menampilkan informasi PKL secara kontekstual.
+5. Menyeragamkan komponen UI, warna, tipografi, dan spacing.
+6. Memastikan navigasi serta gesture mudah dipahami.
+7. Mempertahankan kompatibilitas dengan fungsi dan data yang sudah ada.
 
-Elemen habit tracker pada referensi diubah menjadi fitur produktivitas PKL:
+### 3.1 Bukan tujuan pembaruan
 
-| Elemen referensi | Adaptasi SNOOP |
-|---|---|
-| Daily Goal | Status absensi dan target harian |
-| Habit Streak | Konsistensi kehadiran |
-| Task Board | Jadwal dan pekerjaan PKL |
-| Habit List | Pengingat minum, istirahat, dan rutinitas |
-| Project Progress | Progres tugas dan proyek |
-| Goal Statistics | Statistik kehadiran dan penyelesaian tugas |
-| Add Button | Menambah tugas atau pengingat |
+Update ini tidak bertujuan untuk:
+- Membuat ulang aplikasi dari nol.
+- Mengganti Flutter dengan framework lain.
+- Menghapus fitur PKL yang sudah tersedia.
+- Mengubah aturan absensi atau sistem autentikasi.
+- Mengganti ikon aplikasi Android asli dengan ikon dekoratif.
+- Menambahkan fitur yang tidak memiliki kebutuhan produk yang jelas.
+- Menjadikan seluruh layar sebagai kumpulan kartu dashboard.
 
-Tidak semua komponen harus ditampilkan sekaligus. Prioritaskan informasi yang paling dibutuhkan pengguna pada saat membuka launcher.
+## 4. Referensi dan Arah Visual
 
-## 3. Target Pengguna
+Referensi utama adalah gambar Smart Launcher yang diberikan pengguna.
 
-Pengguna utama adalah siswa atau peserta PKL yang menggunakan Android sebagai perangkat sehari-hari.
+Karakteristik yang perlu diadaptasi:
+- Panel utama dengan bentuk asimetris dan lengkungan organik.
+- Perpaduan area terang dan gelap yang memiliki batas visual jelas.
+- Jam digital besar sebagai elemen identitas beranda.
+- Widget dengan ukuran dan proporsi bervariasi.
+- Dock aplikasi membulat pada bagian bawah.
+- Komposisi yang ringkas dan tidak monoton.
 
-Kebutuhan pengguna:
-
-- Melihat jadwal dan agenda tanpa membuka banyak aplikasi.
-- Melakukan absensi masuk dan pulang dengan cepat.
-- Mengetahui status kehadiran hari ini.
-- Mendapat pengingat yang relevan dan tepat waktu.
-- Membuka aplikasi terpasang dengan navigasi yang intuitif.
-- Mengakses data absensi dan tugas dengan koneksi internet yang terbatas.
-- Menggunakan launcher tanpa mengalami lag, freeze, atau konsumsi baterai berlebihan.
-
-## 4. Design System
+Adaptasi untuk SNOOP harus mempertahankan ciri tersebut tanpa menyalin seluruh desain produk referensi.
 
 ### 4.1 Palet warna
 
-Warna tidak harus mengikuti hijau pada gambar referensi. Gunakan palet yang sesuai dengan identitas SNOOP.
+| Elemen | Warna acuan | Penggunaan |
+|---|---|---|
+| Kuning hangat | `#F4BD22` | Panel utama dan aksen |
+| Charcoal | `#252422` | Area gelap |
+| Abu-abu gelap | `#383735` | Widget dan dock |
+| Ivory | `#F5F3ED` | Alternatif latar terang |
+| Putih | `#FFFFFF` | Teks pada area gelap |
+| Abu-abu netral | `#D0CCC3` | Teks sekunder pada area gelap |
+
+Warna merupakan token awal dan boleh disesuaikan setelah pemeriksaan kontras serta implementasi pada perangkat nyata.
+
+Status seperti berhasil, terlambat, gagal, atau offline harus memiliki pembeda yang jelas. Warna kuning tidak boleh menjadi satu-satunya penanda status.
 
-Palet awal yang direkomendasikan:
+### 4.2 Tipografi dan komponen
 
-- Primary: sky blue atau blue-grey.
-- Background: ivory atau off-white.
-- Surface: putih atau warna permukaan yang sedikit berbeda dari background.
-- Primary contrast: charcoal atau near-black.
-- Success: hijau lembut.
-- Warning: amber yang tidak terlalu terang.
-- Error: merah lembut.
-- Secondary accent: warna pastel tambahan, digunakan secara terbatas.
+- Gunakan tipografi yang mudah dibaca pada layar ponsel.
+- Jam menjadi elemen teks paling menonjol di beranda.
+- Judul bagian harus lebih menonjol daripada keterangan sekunder.
+- Gunakan radius dan spacing yang konsisten.
+- Hindari shadow berlebihan, gradient dekoratif, dan border pada semua elemen.
+- Gunakan ikon yang konsisten dan mudah dikenali.
+- Pastikan label tetap terbaca pada ukuran layar kecil.
+
+## 5. Persyaratan Fungsional dan Visual
 
-Nilai warna akhir harus didefinisikan sebagai design tokens, bukan ditulis berulang kali pada masing-masing widget.
+### 5.1 Home Screen
 
-Tema light dan dark harus didukung dengan kontras teks yang memadai. Dark mode menggunakan permukaan gelap dengan pemisahan tingkat permukaan yang jelas, bukan sekadar membalik seluruh warna.
+Home Screen merupakan halaman utama yang muncul saat launcher dibuka.
 
-### 4.2 Bentuk dan spacing
+**Persyaratan:**
 
-- Kartu utama: radius besar dan konsisten.
-- Kartu sekunder: radius sedikit lebih kecil.
-- Tombol: radius konsisten dengan karakter kartu.
-- Spacing: menggunakan skala terstruktur, misalnya kelipatan 4 atau 8 dp.
-- Ikon: gunakan satu gaya visual yang konsisten.
-- Bayangan: minimal dan hanya jika membantu membedakan permukaan.
-- Hindari blur berat, efek kaca berlapis-lapis, dan gradien yang tidak memberikan manfaat fungsional.
+1. Menampilkan jam digital secara jelas.
+2. Menampilkan tanggal sesuai waktu lokal perangkat.
+3. Menampilkan identitas SNOOP secara ringkas.
+4. Menggunakan panel utama dengan bentuk organik yang mengikuti arah desain referensi.
+5. Menampilkan pintasan fitur PKL yang relevan.
+6. Menyediakan akses cepat ke aplikasi favorit.
+7. Menampilkan dock aplikasi pada bagian bawah.
+8. Mendukung akses ke App Drawer.
+9. Mempertahankan status dan data aktual dari sistem yang sudah ada.
+10. Menyesuaikan layout dengan ukuran layar dan area aman perangkat.
 
-### 4.3 Tipografi
+**Hierarki konten yang direkomendasikan:**
 
-Gunakan tipografi sans-serif yang mudah dibaca. Ukuran dan bobot font harus menunjukkan hierarki yang jelas.
+1. Identitas, jam, dan tanggal.
+2. Informasi atau tindakan PKL utama.
+3. Widget pendukung.
+4. Aplikasi favorit.
+5. Dock dan akses App Drawer.
+
+Hierarki ini dapat disesuaikan dengan tinggi layar. Tidak semua informasi wajib terlihat sekaligus.
+
+### 5.2 Widget PKL
+
+Widget digunakan untuk memberikan akses cepat ke aktivitas PKL, bukan menggantikan halaman fitur lengkap.
+
+Widget yang diprioritaskan:
+
+**A. Absensi**
+- Menampilkan status absensi aktual.
+- Menyediakan tindakan sesuai status pengguna.
+- Menampilkan status loading, gagal mengambil data, atau offline secara jelas.
+- Tidak mengasumsikan pengguna sudah atau belum hadir sebelum data tersedia.
 
-Urutan prioritas:
-
-1. Jam dan status absensi.
-2. Judul halaman dan agenda.
-3. Informasi tugas dan pengingat.
-4. Metadata, waktu, label, dan status sekunder.
-
-Hindari teks terlalu kecil, khususnya pada tombol, status absensi, dan informasi penting.
-
-## 5. Struktur Navigasi
-
-Navigasi utama terdiri dari dua halaman horizontal.
-
-### 5.1 Home
-
-Home menjadi halaman utama saat launcher dibuka.
-
-Konten yang diprioritaskan:
-
-- Jam dan tanggal.
-- Salam singkat atau identitas pengguna.
-- Kartu absensi hari ini.
-- Agenda atau pekerjaan berikutnya.
-- Pengingat aktif.
-- Ringkasan progres harian.
-- Akses cepat ke aplikasi favorit.
-
-### 5.2 App Drawer
-
-App Drawer menampilkan aplikasi Android yang terpasang pada perangkat.
-
-Fitur:
-
-- Grid ikon aplikasi.
-- Nama aplikasi.
-- Pencarian aplikasi.
-- Pengurutan yang konsisten.
-- Pembukaan aplikasi dengan satu ketukan.
-- Refresh daftar saat aplikasi baru dipasang atau dihapus.
-- Caching ikon dan metadata untuk mengurangi pemuatan berulang.
-
-App Drawer tidak boleh bergantung pada daftar aplikasi hardcoded.
-
-### 5.3 Aturan gesture
-
-**Navigasi utama harus menggunakan swipe horizontal, bukan swipe ke atas.**
-
-- Dari Home, swipe ke kanan membuka App Drawer.
-- Dari App Drawer, swipe ke kiri kembali ke Home.
-- Perpindahan halaman memiliki animasi singkat dan natural.
-- Tidak ada kewajiban menggunakan swipe ke atas untuk menampilkan aplikasi.
-- Tombol alternatif untuk membuka daftar aplikasi boleh tersedia jika tidak mengganggu desain.
-
-Implementasi gesture harus mempertimbangkan bahwa sebagian perangkat Android menggunakan swipe tepi layar untuk navigasi sistem. Gesture launcher tidak boleh mengambil alih navigasi sistem secara agresif.
-
-Swipe untuk menghapus pengingat atau melakukan tindakan lain harus memiliki area dan arah interaksi yang jelas agar tidak bentrok dengan perpindahan halaman.
-
-## 6. Spesifikasi Halaman
-
-### 6.1 Home / Today
-
-Home harus menjawab tiga pertanyaan dalam beberapa detik:
-
-- Apa agenda saya berikutnya?
-- Apakah saya sudah absen?
-- Apakah ada pengingat penting?
-
-Komponen:
-
-**A. Header**
-- Jam dan tanggal.
-- Identitas pengguna atau salam.
-- Informasi singkat yang relevan.
-
-**B. Attendance Card**
-- Status: belum absen, sudah absen masuk, sudah absen pulang, atau menunggu sinkronisasi.
-- Jam masuk dan jam pulang.
-- Tombol aksi utama yang berubah sesuai status.
-- Indikator koneksi dan status penyimpanan.
-
-**C. Today's Schedule**
-- Daftar kegiatan berdasarkan waktu.
-- Nama kegiatan, waktu, dan status.
-- Penanda kegiatan yang sedang berlangsung.
-- Akses ke detail tugas.
-
-**D. Reminder Cards**
-- Pengingat minum.
-- Pengingat istirahat.
-- Pengingat kegiatan dan tenggat.
-- Kontrol menunda atau menyelesaikan pengingat.
-
-**E. Daily Progress**
-- Jumlah tugas selesai.
-- Tugas yang masih berjalan.
-- Ringkasan aktivitas harian.
-
-Informasi harus diprioritaskan secara dinamis. Jika pengguna belum melakukan absensi, kartu absensi harus mendapat perhatian visual paling besar.
-
-### 6.2 Attendance Detail
-
-Halaman absensi menyediakan informasi yang lebih lengkap:
-
-- Status kehadiran hari ini.
-- Waktu masuk dan pulang.
-- Informasi lokasi apabila kebijakan PKL mewajibkannya.
-- Status sinkronisasi.
-- Riwayat kehadiran.
-- Catatan atau keterangan absensi.
-- Informasi kesalahan dan cara mengatasinya.
-
-Tombol absensi harus memiliki status loading, sukses, dan gagal yang jelas. Ketukan berulang tidak boleh menghasilkan catatan absensi ganda.
-
-### 6.3 Task
-
-Halaman tugas memiliki dua kategori utama:
-
-- Daily Task.
-- Project.
-
-Setiap tugas dapat memuat judul, deskripsi, waktu, tenggat, status, dan prioritas. Progres ditampilkan dengan indikator yang mudah dipahami.
-
-Fitur minimal:
-
-- Menambah tugas.
-- Mengubah detail tugas.
-- Menandai tugas selesai.
-- Mengurutkan tugas berdasarkan waktu atau prioritas.
-- Menampilkan detail proyek.
-
-Fitur lama yang sudah berjalan harus diperiksa sebelum diganti.
-
-### 6.4 Reminder
-
-Pengguna dapat membuat pengingat berdasarkan waktu dan pengulangan.
-
-Contoh:
-
-- Minum air setiap interval yang ditentukan.
-- Istirahat pada jam tertentu.
-- Persiapan berangkat PKL.
-- Tenggat pekerjaan.
-- Pengingat absensi masuk dan pulang.
-
-Pengingat harus dapat diaktifkan, dinonaktifkan, ditunda, dan dihapus. Jadwal notifikasi harus tetap konsisten setelah perangkat dimulai ulang jika didukung oleh implementasi Android.
-
-Jangan mengandalkan notifikasi yang membutuhkan proses aplikasi terus-menerus berjalan di latar belakang.
-
-### 6.5 Statistics / Goal
-
-Halaman statistik menampilkan:
-
-- Total kehadiran.
-- Jumlah keterlambatan jika aturan tersebut tersedia.
-- Jumlah tugas selesai.
-- Jumlah tugas yang masih berjalan.
-- Ringkasan progres mingguan.
-
-Data statistik harus berasal dari data aktual, bukan angka contoh yang ditampilkan sebagai data pengguna.
-
-## 7. Sistem Absensi Online
-
-### 7.1 Backend
-
-Supabase direkomendasikan sebagai backend untuk autentikasi, database, dan penyimpanan riwayat absensi.
-
-Implementasi harus memeriksa konfigurasi proyek yang sudah tersedia dan menggunakan kembali integrasi yang masih relevan.
-
-Data minimum absensi:
-
-- ID absensi.
-- ID pengguna.
-- Tanggal kerja berdasarkan zona waktu yang ditetapkan.
-- Timestamp masuk.
-- Timestamp pulang.
-- Status absensi.
-- Metadata lokasi jika diperlukan.
-- Catatan atau keterangan.
-- Status sinkronisasi lokal.
-
-Gunakan tipe data dan constraint yang sesuai, serta relasi foreign key ke identitas pengguna.
-
-### 7.2 Autentikasi
-
-- Pengguna harus login sebelum melakukan absensi online.
-- Data setiap pengguna terikat pada identitas autentikasi.
-- Sesi harus dipertahankan dengan aman.
-- Logout harus membersihkan informasi sensitif dari state aplikasi.
-- Pengguna tidak boleh dapat mengakses atau mengubah absensi milik orang lain.
-
-### 7.3 Validasi absensi
-
-Validasi harus dilakukan di server atau melalui mekanisme backend tepercaya.
-
-Persyaratan:
-
-- Satu catatan absensi per pengguna per tanggal kerja, sesuai aturan yang ditetapkan.
-- Waktu absensi ditentukan oleh server.
-- Waktu pulang tidak boleh lebih awal daripada waktu masuk.
-- Permintaan duplikat harus ditolak atau ditangani secara idempoten.
-- Zona waktu dan pergantian tanggal harus ditentukan secara eksplisit.
-- Jika diperlukan, validasi geofence dan aturan radius lokasi diterapkan di backend.
-
-Lokasi GPS hanya boleh digunakan apabila diperlukan oleh kebijakan PKL. Permintaan izin lokasi harus disertai penjelasan yang jelas kepada pengguna.
-
-### 7.4 Offline-first
-
-Aplikasi harus tetap menampilkan data terakhir yang berhasil dimuat ketika koneksi internet tidak tersedia.
-
-Untuk transaksi absensi offline:
-
-- Catatan lokal diberi status menunggu sinkronisasi.
-- Pengguna diberi tahu bahwa absensi belum dikonfirmasi server.
-- Data disimpan dalam antrean lokal yang persisten.
-- Sinkronisasi dicoba kembali ketika koneksi tersedia.
-- Backend melakukan deduplikasi dan validasi.
-- Antrean tidak boleh kehilangan catatan akibat aplikasi ditutup.
-
-**Catatan penting:** absensi offline tidak boleh langsung ditampilkan sebagai absensi server yang sudah terverifikasi. Waktu lokal dapat dimanipulasi. Jika aturan PKL mewajibkan waktu resmi, konfirmasi final harus berasal dari server atau kebijakan offline yang disetujui pembimbing.
-
-### 7.5 Keamanan
-
-- Aktifkan Row Level Security (RLS).
-- Buat policy berdasarkan identitas pengguna yang terautentikasi.
-- Jangan menyertakan service-role key Supabase di aplikasi Android.
-- Validasi operasi sensitif di server.
-- Batasi akses ke data lokasi.
-- Jangan menyimpan kata sandi dalam bentuk plaintext.
-- Gunakan logging yang tidak membocorkan token, kredensial, atau data pribadi.
-
-## 8. Persyaratan Performa
-
-Performa merupakan persyaratan inti, bukan pekerjaan tambahan setelah UI selesai.
-
-### Optimasi Flutter
-
-- Gunakan `const` pada widget yang memenuhi syarat.
-- Kurangi rebuild yang tidak diperlukan.
-- Pisahkan state UI dari operasi database dan layanan perangkat.
-- Hindari permintaan jaringan berulang saat Home dibuka.
-- Gunakan caching untuk ikon aplikasi.
-- Hindari pemrosesan berat di main isolate.
-- Hindari polling agresif untuk memperbarui data.
-- Gunakan mekanisme sinkronisasi yang sesuai, termasuk pembaruan berbasis event jika tersedia.
-- Hindari mempertahankan seluruh layar berat dalam memori tanpa kebutuhan yang jelas.
-
-### Integrasi Android
-
-- Inisialisasi kamera dan GPS hanya ketika diperlukan.
-- Kelola izin secara bertahap.
-- Pastikan listener, stream, dan resource dilepas ketika tidak lagi digunakan.
-- Hindari service latar belakang permanen hanya untuk pengingat biasa.
-- Uji konsumsi baterai, startup, dan responsivitas di perangkat fisik.
-
-### Kriteria pengukuran
-
-Sebelum dan sesudah optimasi, ukur:
-
-- Waktu cold start.
-- Waktu perpindahan Home ke App Drawer.
-- Frame rendering dan dropped frames.
-- Penggunaan RAM saat idle dan saat membuka App Drawer.
-- Konsumsi baterai selama penggunaan normal.
-- Waktu pemuatan data absensi.
-- Perilaku aplikasi saat offline.
-
-Target awal yang diusulkan, bukan hasil pengukuran yang sudah tercapai:
-
-- Cold start persentil ke-95 sekitar 2,5 detik atau kurang pada perangkat uji yang ditentukan.
-- Transisi halaman sekitar 300 ms atau kurang.
-- Animasi mengikuti target refresh rate perangkat tanpa jank yang berarti.
-- Tidak ada permintaan jaringan berulang tanpa alasan.
-- Tidak ada crash atau freeze selama skenario pengujian utama.
-
-Target harus dievaluasi berdasarkan perangkat uji dan baseline aktual.
-
-## 9. Arsitektur dan Pemeliharaan
-
-Sebelum implementasi, lakukan audit terhadap source code yang ada.
-
-Prinsip:
-
-- Pertahankan teknologi dan fitur yang masih relevan.
-- Hindari migrasi framework tanpa alasan teknis.
-- Pisahkan UI, state management, domain logic, dan data services sesuai pola proyek.
-- Gunakan satu sumber kebenaran untuk status absensi.
-- Definisikan model dan kontrak data yang konsisten.
-- Hindari duplikasi logika validasi.
-- Simpan konfigurasi yang tidak sensitif di environment configuration.
-- Sediakan penanganan error yang konsisten.
-
-Jika proyek sudah menggunakan Flutter dan Kotlin untuk integrasi Android native, pertahankan pendekatan tersebut kecuali audit menunjukkan hambatan yang nyata.
-
-## 10. Aksesibilitas dan Responsivitas
-
-- Area sentuh idealnya minimal 48 × 48 dp.
-- Informasi penting tidak hanya dibedakan menggunakan warna.
-- Kontras teks memenuhi pedoman aksesibilitas yang relevan.
-- Tata letak tetap terbaca pada berbagai ukuran layar.
-- Teks yang panjang tidak boleh merusak kartu atau memotong tombol.
-- Ukuran font sistem harus tetap didukung.
-- Ikon penting memiliki label aksesibilitas.
-- Animasi harus singkat dan tidak menghambat penggunaan.
-
-## 11. Ruang Lingkup
-
-### Termasuk dalam versi ini
-
-- Redesign Home dan App Drawer.
-- Navigasi swipe horizontal.
-- Pembaruan design system.
-- Integrasi absensi online.
-- Penanganan sinkronisasi offline.
-- Jadwal dan tugas.
-- Pengingat dan notifikasi.
-- Statistik kehadiran dan tugas.
-- Optimasi performa.
-- Penanganan loading, error, dan empty states.
-- Pengujian serta verifikasi build APK.
-
-### Tidak termasuk secara default
-
-- Sistem payroll.
-- Pelacakan GPS terus-menerus.
-- Pengawasan pengguna di latar belakang.
-- Sistem administrasi perusahaan yang kompleks.
-- Sinkronisasi dengan sistem HR eksternal yang belum ditentukan.
-- Penggantian seluruh arsitektur aplikasi tanpa justifikasi.
-
-## 12. Acceptance Criteria
-
-Pekerjaan dinyatakan selesai jika kriteria berikut terpenuhi.
-
-### UI/UX
-
-- [ ] Home mengikuti komposisi visual referensi dengan konten PKL.
-- [ ] Palet warna baru diterapkan melalui design tokens.
-- [ ] Komponen dan radius kartu konsisten.
-- [ ] Semua halaman memiliki loading, error, dan empty states yang sesuai.
-- [ ] Light dan dark mode berjalan jika keduanya masuk cakupan implementasi.
-- [ ] Tidak ada overflow atau layout rusak pada ukuran layar target.
-
-### Navigasi
-
-- [ ] Swipe kanan dari Home membuka App Drawer.
-- [ ] Swipe kiri dari App Drawer kembali ke Home.
-- [ ] Daftar aplikasi diambil dari sistem Android.
-- [ ] Pencarian aplikasi berfungsi.
-- [ ] Gesture tidak bentrok dengan navigasi sistem secara signifikan.
-
-### Absensi
-
-- [ ] Login dan sesi autentikasi berfungsi.
-- [ ] Absensi masuk tersimpan di backend.
-- [ ] Absensi pulang tersimpan pada catatan yang benar.
-- [ ] Timestamp resmi ditentukan oleh backend.
-- [ ] Absensi ganda ditangani dengan benar.
-- [ ] RLS mencegah akses lintas pengguna.
-- [ ] Status offline dan pending sync ditampilkan secara akurat.
-- [ ] Sinkronisasi ulang tidak membuat data duplikat.
-- [ ] Riwayat absensi menampilkan data aktual.
-
-### Pengingat dan tugas
-
-- [ ] Pengingat dapat dibuat, diubah, dan dihapus.
-- [ ] Notifikasi diuji pada perangkat Android.
-- [ ] Tugas dapat diselesaikan dan progres diperbarui.
-- [ ] Data tetap tersedia sesuai kebijakan penyimpanan dan sinkronisasi.
-
-### Performa dan kualitas
-
-- [ ] Analisis statis tidak memiliki error yang belum terselesaikan.
-- [ ] Build APK berhasil.
-- [ ] Skenario utama diuji pada perangkat fisik.
-- [ ] Tidak ada crash kritis pada alur utama.
-- [ ] Hasil pengukuran performa sebelum dan sesudah tersedia.
-- [ ] Semua konfigurasi sensitif diperiksa sebelum rilis.
-
-## 13. Tahapan Implementasi
-
-**Tahap 1 — Audit**
-- Petakan struktur source code.
-- Identifikasi fitur yang sudah bekerja, belum lengkap, dan bermasalah.
-- Catat dependensi dan konfigurasi backend.
-- Buat baseline performa.
-
-**Tahap 2 — Design system**
-- Definisikan warna, tipografi, spacing, radius, ikon, dan komponen.
-- Implementasikan ulang komponen bersama.
-- Buat Home dan App Drawer berdasarkan referensi.
-
-**Tahap 3 — Navigasi**
-- Implementasikan perpindahan horizontal.
-- Integrasikan App Drawer dengan Android native.
-- Uji konflik gesture dan responsivitas.
-
-**Tahap 4 — Absensi**
-- Selesaikan autentikasi.
-- Validasi skema database dan RLS.
-- Implementasikan transaksi absensi masuk dan pulang.
-- Tambahkan status offline dan sinkronisasi.
-
-**Tahap 5 — Produktivitas**
-- Integrasikan jadwal, tugas, pengingat, dan statistik.
-- Pastikan data UI bersumber dari model yang benar.
-- Uji notifikasi dan penyimpanan persisten.
-
-**Tahap 6 — Optimasi dan QA**
-- Profiling dan optimasi.
-- Uji jaringan tidak stabil, restart perangkat, dan sesi login.
-- Jalankan analisis statis dan build.
-- Dokumentasikan perubahan, hasil pengujian, dan batasan yang tersisa.
-
-## 14. Instruksi Implementasi untuk AI Coding Agent
-
-Gunakan PRD ini bersama source code SNOOP yang sudah tersedia.
-
-1. Audit source code terlebih dahulu sebelum mengubah file.
-2. Jangan mengganti proyek dengan mockup atau aplikasi baru yang tidak terhubung dengan implementasi lama.
-3. Pertahankan fitur yang masih relevan dan jangan menghapus data atau migrasi database yang sudah ada.
-4. Gunakan gambar referensi sebagai acuan layout, hierarki, dan bentuk komponen, bukan sebagai kewajiban menyalin warna.
-5. Terapkan swipe horizontal untuk navigasi Home dan App Drawer.
-6. Selesaikan integrasi absensi online dan verifikasi keamanan backend.
-7. Prioritaskan performa nyata di perangkat Android, bukan hanya tampilan yang terlihat ringan.
-8. Jangan mengklaim suatu fitur selesai sebelum implementasi dan pengujiannya berhasil.
-9. Jalankan pemeriksaan kode dan build APK, lalu perbaiki error yang ditemukan.
-10. Pada akhir pekerjaan, berikan ringkasan file yang diubah, fitur yang selesai, hasil pengujian, konfigurasi yang masih dibutuhkan, dan masalah yang belum terselesaikan.
-
-## 15. Definisi Keberhasilan Produk
-
-SNOOP berhasil jika pengguna dapat membuka launcher, memahami agenda hari ini, melakukan absensi dengan benar, mengakses aplikasi melalui swipe kanan, dan menerima pengingat tanpa harus berhadapan dengan UI yang rumit atau performa yang lambat.
-
-**Prinsip utama:** desain harus menarik secara visual, tetapi setiap elemen harus memiliki fungsi. Performa, kejelasan status absensi, keamanan data, dan kemudahan penggunaan lebih penting daripada dekorasi visual yang berat.
+**B. Jadwal**
+- Menampilkan kegiatan berikutnya jika tersedia.
+- Mengarahkan pengguna ke halaman Jadwal.
+- Menangani kondisi ketika tidak ada jadwal.
+
+**C. Dokumentasi / Memories**
+- Menyediakan akses cepat ke dokumentasi PKL.
+- Menampilkan informasi aktual apabila implementasi yang ada mendukungnya.
+- Tidak menggunakan data contoh sebagai data pengguna.
+
+**D. Widget pendukung**
+- Widget cuaca atau musik hanya menjadi opsi apabila integrasi yang dibutuhkan benar-benar tersedia.
+- Widget tersebut tidak boleh menghambat fungsi utama launcher.
+- Jika integrasi tidak tersedia, gunakan ruang tersebut untuk fitur yang memang sudah didukung SNOOP.
+
+### 5.3 App Drawer
+
+App Drawer merupakan tempat untuk menemukan dan membuka seluruh aplikasi Android yang tersedia.
+
+**Persyaratan:**
+- Menampilkan aplikasi yang berhasil ditemukan oleh sistem.
+- Mempertahankan fungsi pencarian.
+- Menyediakan bagian Favorit dan Semua Aplikasi.
+- Mempertahankan kategori yang tersedia apabila masih relevan.
+- Menampilkan ikon aplikasi asli.
+- Menjaga nama aplikasi tetap terbaca.
+- Memiliki tampilan loading, kosong, dan error.
+- Mempertahankan fungsi membuka aplikasi dan informasi aplikasi yang sudah ada.
+- Memastikan aplikasi tidak hilang hanya karena klasifikasi kategorinya tidak sesuai.
+
+Ukuran ikon, jumlah kolom, dan ukuran label harus disesuaikan melalui pengujian di beberapa ukuran layar, bukan ditentukan hanya dari screenshot.
+
+### 5.4 Dock Launcher
+
+Dock merupakan area pintasan aplikasi yang selalu mudah dijangkau di beranda.
+
+**Persyaratan:**
+- Menggunakan bentuk membulat.
+- Memiliki latar gelap atau transparan yang kontras dengan latar di belakangnya.
+- Menampilkan aplikasi pilihan pengguna.
+- Mendukung pembukaan aplikasi secara langsung.
+- Menyediakan pintasan App Drawer.
+- Menjaga ukuran target sentuh tetap nyaman.
+- Menghindari benturan dengan gesture sistem Android.
+
+Jumlah ikon mengikuti kapasitas layar dan konfigurasi yang didukung. Ikon telepon, pesan, kamera, atau aplikasi lain tidak boleh dianggap wajib jika aplikasinya tidak tersedia atau tidak dipilih pengguna.
+
+### 5.5 Navigasi
+
+Navigasi harus memiliki perilaku yang konsisten pada semua halaman.
+
+**Persyaratan:**
+- Pengguna dapat kembali ke Home Screen dengan cara yang jelas.
+- App Drawer dapat dibuka melalui tombol atau gesture yang ditetapkan.
+- Tombol kembali Android mengikuti konteks halaman.
+- Gesture tidak mengganggu scroll, carousel, atau interaksi halaman lain.
+- Ikon navigasi memiliki label atau deskripsi aksesibilitas.
+- Perubahan tab tidak boleh menghilangkan data yang belum tersimpan.
+
+Implementasi tidak boleh mengasumsikan bahwa swipe horizontal adalah satu-satunya cara membuka App Drawer.
+
+### 5.6 Halaman pendukung
+
+Halaman berikut tetap dipertahankan dan harus mengikuti sistem visual yang sama:
+- Jadwal.
+- Memories dan detail dokumentasi.
+- Pengingat.
+- Profil.
+- Pengaturan.
+- Absensi.
+- Autentikasi dan onboarding.
+
+Penyelarasan visual tidak berarti semua halaman harus memakai layout yang identik. Setiap halaman tetap mengikuti kebutuhan fungsionalnya.
+
+## 6. Sistem Desain
+
+Implementasikan atau rapikan design system terpusat untuk:
+
+- Palet warna.
+- Tipografi.
+- Spacing.
+- Radius.
+- Ukuran ikon.
+- Elevasi.
+- Gaya tombol.
+- Widget status.
+- Input dan pencarian.
+- Empty state.
+- Loading state.
+- Error state.
+
+Gunakan token yang sudah ada jika masih sesuai. Hindari membuat token baru yang menduplikasi fungsi token lama.
+
+Komponen harus mendukung tema terang dan gelap jika keduanya merupakan bagian dari cakupan aplikasi. Jangan mengklaim tema gelap selesai jika masih ada warna yang ditetapkan secara statis dan tidak mengikuti tema.
+
+## 7. Responsivitas dan Aksesibilitas
+
+Antarmuka harus diuji pada:
+- Layar Android kecil.
+- Layar Android berukuran umum.
+- Layar berukuran besar.
+- Perubahan ukuran teks sistem.
+- Keyboard terbuka.
+- Orientasi yang didukung.
+- Safe area dan system bars.
+
+**Kriteria:**
+- Tidak ada overflow yang terlihat pada ukuran yang diuji.
+- Teks penting tidak terpotong tanpa alasan.
+- Tombol dan ikon interaktif mudah disentuh.
+- Kontras teks memadai.
+- Elemen interaktif memiliki label aksesibilitas.
+- Informasi status tidak bergantung pada warna saja.
+- Animasi tidak menghalangi interaksi dan menghormati pengaturan pengurangan animasi jika didukung.
+
+## 8. Integrasi Android
+
+Karena SNOOP berfungsi sebagai launcher, pengujian tidak cukup dilakukan melalui screenshot atau preview Flutter.
+
+Periksa:
+- Kemampuan aplikasi terdaftar sebagai kandidat Home launcher Android.
+- Pemilihan SNOOP sebagai Home default.
+- Perilaku tombol Home.
+- Perilaku tombol kembali.
+- Pembukaan aplikasi lain.
+- Kembali ke SNOOP setelah aplikasi lain ditutup.
+- Penanganan aplikasi yang tidak tersedia.
+- Izin dan perilaku sistem Android yang relevan.
+
+Perubahan pada AndroidManifest atau integrasi native hanya dilakukan apabila diperlukan dan setelah memeriksa implementasi saat ini.
+
+## 9. Batasan Teknis
+
+- Pertahankan Flutter dan Dart.
+- Pertahankan integrasi native yang telah berjalan.
+- Pertahankan sumber data aktual.
+- Pertahankan autentikasi dan penyimpanan.
+- Hindari refactor besar yang tidak diperlukan untuk tujuan pembaruan.
+- Jangan menambahkan ketergantungan baru tanpa kebutuhan yang jelas.
+- Hindari perubahan kontrak API atau struktur database dalam pekerjaan UI ini.
+- Pisahkan perubahan visual dari perbaikan bug fungsional jika keduanya dapat dikerjakan secara aman.
+- Catat setiap perubahan yang berdampak pada perilaku launcher.
+
+## 10. Acceptance Criteria
+
+Pembaruan dianggap memenuhi persyaratan apabila:
+
+1. Home Screen memiliki komposisi panel organik yang terinspirasi referensi.
+2. Jam dan tanggal ditampilkan dengan benar.
+3. Widget PKL menggunakan data aktual dan memiliki status fallback yang jelas.
+4. Aplikasi favorit dapat dibuka langsung.
+5. App Drawer dapat dibuka, dicari, dan digunakan untuk meluncurkan aplikasi.
+6. Kategori tidak menjadi penghalang untuk menemukan aplikasi.
+7. Navigasi dan tombol kembali berfungsi sesuai konteks.
+8. Tampilan menyesuaikan ukuran layar yang diuji.
+9. Tidak ada fungsi lama yang hilang akibat perubahan UI.
+10. Tema dan komponen menggunakan design system yang konsisten.
+11. Tidak ada error baru yang belum ditangani akibat perubahan.
+12. Hasil pengujian dan pekerjaan yang belum selesai dilaporkan secara transparan.
+
+## 11. Rencana Implementasi
+
+### Tahap 1 — Audit
+- Periksa kode aktual.
+- Identifikasi widget, state, dan layanan yang digunakan.
+- Dokumentasikan masalah visual dan fungsional yang terbukti.
+- Tentukan komponen yang dapat dipakai kembali.
+
+### Tahap 2 — Redesign Home
+- Perbarui layout beranda.
+- Terapkan panel organik.
+- Susun ulang jam, informasi PKL, widget, dan pintasan.
+- Validasi data dan state.
+
+### Tahap 3 — Redesign App Drawer dan Dock
+- Rapikan grid aplikasi.
+- Perbaiki pencarian dan kategori.
+- Sesuaikan ikon, label, spacing, dan interaksi.
+- Validasi fungsi pembukaan aplikasi.
+
+### Tahap 4 — Konsistensi dan Responsivitas
+- Terapkan design system.
+- Selaraskan halaman pendukung.
+- Uji berbagai ukuran layar dan tema.
+
+### Tahap 5 — QA dan Verifikasi
+- Jalankan flutter pub get.
+- Jalankan flutter analyze.
+- Jalankan flutter test jika tersedia.
+- Build aplikasi Android.
+- Uji pada perangkat atau emulator.
+- Catat hasil pengujian dan temuan yang belum diselesaikan.
+
+## 12. Deliverables
+
+Hasil pekerjaan harus mencakup:
+
+1. Implementasi UI Home Screen terbaru.
+2. Implementasi App Drawer dan Dock yang telah diperbaiki.
+3. Penyelarasan design system.
+4. Perbaikan responsivitas dan aksesibilitas yang masuk cakupan.
+5. Daftar file yang diubah.
+6. Ringkasan perubahan sebelum dan sesudah.
+7. Hasil pengujian yang benar-benar dijalankan.
+8. Daftar bug yang ditemukan dan belum terselesaikan.
+9. Daftar pekerjaan lanjutan yang tidak termasuk cakupan Update 1.0.0.
+
+## 13. Di Luar Cakupan
+
+Fitur berikut tidak otomatis masuk dalam pembaruan ini:
+- Integrasi cuaca baru.
+- Integrasi musik baru.
+- Pengembangan backend PKL baru.
+- Perubahan sistem autentikasi.
+- Perubahan struktur database.
+- Penambahan fitur bisnis baru.
+- Penggantian keseluruhan arsitektur aplikasi.
+
+Fitur tambahan hanya dapat dimasukkan setelah kebutuhan, dependensi, dan dampaknya dikonfirmasi.
+
+## 14. Definisi Selesai
+
+Update 1.0.0 selesai ketika desain launcher telah diimplementasikan ke kode yang ada, fungsi utama tetap berjalan, tampilan diuji pada lingkungan yang tersedia, dan seluruh hasil serta keterbatasan pengujian didokumentasikan.
+
+**Arah akhir:** SNOOP harus terasa seperti launcher Android yang memiliki identitas visual sendiri, bukan dashboard generik yang kebetulan dapat membuka aplikasi.
+
+---

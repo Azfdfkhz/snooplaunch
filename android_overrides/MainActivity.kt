@@ -13,11 +13,12 @@ import java.io.ByteArrayOutputStream
 
 class MainActivity : FlutterActivity() {
     private val channelName = "snoop/launcher"
+    private var channel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
-            .setMethodCallHandler { call, result ->
+        channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
+        channel!!.setMethodCallHandler { call, result ->
                 when (call.method) {
                     "getApps" -> Thread {
                         val apps = loadApps()
@@ -28,8 +29,8 @@ class MainActivity : FlutterActivity() {
                         val intent = pkg?.let { packageManager.getLaunchIntentForPackage(it) }
                         if (intent != null) {
                             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            startActivity(intent)
-                            result.success(true)
+                            // Aplikasi bisa dihapus/dinonaktifkan sesaat sebelum dibuka: laporkan gagal, jangan crash.
+                            try { startActivity(intent); result.success(true) } catch (e: Exception) { result.success(false) }
                         } else result.success(false)
                     }
                     "appInfo" -> {
@@ -51,6 +52,14 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    // Tombol Home saat SNOOP sudah berjalan (launchMode singleTask): beri tahu Flutter agar kembali ke Home utama.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_HOME)) {
+            channel?.invokeMethod("onHome", null)
+        }
     }
 
     private fun loadApps(): List<Map<String, Any>> {

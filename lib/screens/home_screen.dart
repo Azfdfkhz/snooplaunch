@@ -1,266 +1,463 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import '../core/launcher_widgets.dart';
 import '../core/models.dart';
+import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import '../main.dart';
+import '../services/launcher_service.dart';
 import 'auth_screen.dart';
 import 'checkin_screen.dart';
 import 'memories_screen.dart';
 import 'reminders_screen.dart';
 import 'settings_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+/// Home launcher (Update 1.0.0). Urutan konten:
+/// panel organik (identitas, jam, tanggal) -> widget absensi -> jadwal + memories -> pengingat
+/// -> favorit -> dock. Seluruh data berasal dari AppState; tidak ada data contoh.
+class HomeScreen extends StatefulWidget {
   final ValueChanged<int> onGoTo;
   final VoidCallback onOpenDrawer;
   const HomeScreen({super.key, required this.onGoTo, required this.onOpenDrawer});
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    LauncherService.apps(); // dock & favorit membutuhkan daftar aplikasi
+  }
+
+  void _push(Widget page) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
 
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
-    final now = DateTime.now();
-    final att = s.today;
-    final st = s.todayStatus;
-    final reminder = s.nextReminder;
-    final needsCheckIn = st == AttendanceStatus.notCheckedIn;
-    final canOut = att != null && att.checkOutAt == null;
-    final done = att?.checkOutAt != null;
-    final total = s.schedule.length;
-    final doneTasks = s.tasksDone;
-
-    // Kartu absensi mendapat penekanan terbesar saat belum absen.
-    final cardColor = needsCheckIn ? C.sky : C.ink;
-    final fg = needsCheckIn ? C.ink : Colors.white;
-    final fgMuted = needsCheckIn ? const Color(0xFF2F3A44) : const Color(0xFFC3C8CE);
-
-    // Absensi yang belum dikonfirmasi server tidak boleh tampil sebagai terverifikasi.
-    final (chipText, chipBg, chipFg) = att != null && !att.synced
-        ? ('Menunggu server · ${hm(att.checkOutAt ?? att.checkInAt)}', C.skySoft, C.ink)
-        : switch (st) {
-            AttendanceStatus.notCheckedIn => ('Belum absen', C.warningSoft, C.warning),
-            AttendanceStatus.pending => ('Menunggu sinkronisasi', C.skySoft, C.ink),
-            AttendanceStatus.present => ('Hadir ${hm(att!.checkInAt)}${att.offlineTime ? ' · offline' : ''}', C.successSoft, C.success),
-            AttendanceStatus.late => ('Terlambat ${hm(att!.checkInAt)}${att.offlineTime ? ' · offline' : ''}', C.warningSoft, C.warning),
-            AttendanceStatus.checkedOut => ('Pulang ${hm(att!.checkOutAt!)}${att.offlineTime ? ' · offline' : ''}', C.successSoft, C.success),
-            AttendanceStatus.needsAttention => ('Perlu perhatian', const Color(0xFFF8D9DB), C.error),
-          };
-
-    void openAttendance() => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CheckInScreen(isOut: canOut)));
-
-    // Petunjuk status penyimpanan online.
-    ({String text, VoidCallback onTap})? hint;
-    if (!s.backendConfigured) {
-      hint = (text: 'Server belum dikonfigurasi · absensi hanya di perangkat', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen())));
-    } else if (!s.signedIn) {
-      hint = (text: 'Masuk agar absensi tersimpan online', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen())));
-    } else if (s.sync.pending > 0) {
-      hint = (text: '${s.sync.pending} item menunggu sinkronisasi · ketuk untuk coba lagi', onTap: () => s.sync.retryPending());
-    }
-
-    final children = <Widget>[
-      // Header
-      Row(children: [
-        const SnoopMark(size: 40),
-        const SizedBox(width: S.x3),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(greeting(now), style: Theme.of(context).textTheme.bodySmall),
-            Text('${s.name}!', style: Theme.of(context).textTheme.headlineSmall),
-          ]),
-        ),
-        IconButton(
-          tooltip: 'Aplikasi',
-          onPressed: onOpenDrawer,
-          style: IconButton.styleFrom(backgroundColor: C.soft, minimumSize: const Size(48, 48)),
-          icon: const Icon(Icons.apps_rounded, color: C.ink),
-        ),
-      ]),
-      const SizedBox(height: S.x4),
-      const _Clock(),
-      const SizedBox(height: S.x4),
-
-      // Kartu absensi dengan lekukan + tombol aksi bulat
-      NotchCard(
-        color: cardColor,
-        padding: const EdgeInsets.all(S.x5),
-        decor: GeoDecor(a: needsCheckIn ? const Color(0x33FFFFFF) : const Color(0x1F8CC8EE), b: needsCheckIn ? const Color(0x22000000) : const Color(0x14FFFFFF), size: 150),
-        notchChild: Semantics(
-          button: true,
-          label: done ? 'Sudah absen pulang' : (canOut ? 'Absen pulang' : 'Absen masuk'),
-          child: Material(
-            color: needsCheckIn ? C.ink : C.sky,
-            shape: const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: done ? null : openAttendance,
-              child: Icon(done ? Icons.check_rounded : Icons.north_east_rounded, color: needsCheckIn ? Colors.white : C.ink, size: 22),
-            ),
-          ),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Padding(
-            padding: const EdgeInsets.only(right: 56),
-            child: Text('Absensi hari ini', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: fg, letterSpacing: -0.3)),
-          ),
-          const SizedBox(height: S.x1),
-          Text('Jam kerja ${minToHm(s.workStartMin)} – ${minToHm(s.workEndMin)}', style: TextStyle(fontSize: 13, color: fgMuted)),
+    final blocks = <Widget>[
+      _Tick(builder: (ctx, now) => _panel(ctx, now, s)),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(S.x4, S.x2, S.x4, S.x4),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _attendanceWidget(context, s),
           const SizedBox(height: S.x3),
-          Wrap(children: [StatusChip(chipText, bg: chipBg, fg: chipFg)]),
+          _Tick(builder: (ctx, now) => _scheduleAndMemories(ctx, s, now)),
+          const SizedBox(height: S.x3),
+          _Tick(builder: (ctx, now) => _reminderPill(ctx, s)),
+          ..._syncHint(s),
           const SizedBox(height: S.x4),
-          _WeekRow(presence: s.weekPresence, todayIndex: now.weekday - 1, fg: fg, muted: fgMuted, onPrimary: needsCheckIn),
-          const SizedBox(height: S.x4),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: FilledButton.icon(
-              onPressed: done ? null : openAttendance,
-              icon: const Icon(Icons.photo_camera_outlined, size: 20),
-              label: Text(done ? 'Sudah absen pulang' : (canOut ? 'Absen pulang' : 'Absen masuk'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-              style: FilledButton.styleFrom(
-                backgroundColor: needsCheckIn ? C.ink : C.sky,
-                foregroundColor: needsCheckIn ? Colors.white : C.ink,
-                disabledBackgroundColor: const Color(0xFF3A3F45),
-                disabledForegroundColor: const Color(0xFFC3C8CE),
-                shape: const StadiumBorder(),
+          _shortcuts(context),
+          _favorites(context),
+        ]),
+      ),
+    ];
+
+    return ColoredBox(
+      color: C.night,
+      child: Column(children: [
+        Expanded(
+          child: SingleChildScrollView(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              for (var i = 0; i < blocks.length; i++) Reveal(index: i, child: blocks[i]),
+            ]),
+          ),
+        ),
+        _dock(context, s),
+      ]),
+    );
+  }
+
+  // ---------------------------------------------------------------- Panel organik
+
+  Widget _panel(BuildContext context, DateTime now, AppState s) {
+    final top = MediaQuery.paddingOf(context).top;
+    return ClipPath(
+      clipper: const OrganicPanelClipper(cut: 64),
+      child: Container(
+        color: C.accent,
+        padding: EdgeInsets.fromLTRB(S.x6, top + S.x3, S.x6, S.x6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const SnoopMark(size: 28, top: C.ink, bottom: Colors.white, dot: C.ink),
+            const SizedBox(width: S.x2),
+            const Text('SNOOP', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 1.5, color: C.ink)),
+            const Spacer(),
+            Tooltip(
+              message: 'Profil',
+              child: Semantics(
+                button: true,
+                label: 'Buka profil',
+                excludeSemantics: true,
+                child: Material(
+                  color: C.ink,
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: () => widget.onGoTo(3),
+                    child: const SizedBox(width: 48, height: 48, child: Icon(Icons.person_rounded, color: Colors.white, size: 24)),
+                  ),
+                ),
               ),
             ),
+          ]),
+          const SizedBox(height: S.x6),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(hm(now), style: const TextStyle(fontSize: 84, fontWeight: FontWeight.w900, color: C.ink, height: 1, letterSpacing: -3)),
+          ),
+          const SizedBox(height: S.x2),
+          Text(dateLong(now), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: C.ink)),
+          const SizedBox(height: S.x6),
+          // Identitas ditaruh di sisi kiri-bawah, di luar area yang terpotong lengkung.
+          FractionallySizedBox(
+            widthFactor: .42,
+            alignment: Alignment.centerLeft,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(greeting(now), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: C.ink)),
+              Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.ink)),
+            ]),
           ),
         ]),
       ),
-      if (hint != null)
-        Padding(
-          padding: const EdgeInsets.only(top: S.x2),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(R.small),
-            onTap: hint.onTap,
-            child: Container(
-              constraints: const BoxConstraints(minHeight: 48),
-              padding: const EdgeInsets.symmetric(horizontal: S.x4, vertical: S.x2),
-              decoration: BoxDecoration(color: C.warningSoft, borderRadius: BorderRadius.circular(R.small)),
-              child: Row(children: [
-                const Icon(Icons.cloud_off_outlined, size: 18, color: C.warning),
-                const SizedBox(width: S.x2),
-                Expanded(child: Text(hint.text, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: C.ink))),
-                const Icon(Icons.chevron_right_rounded, size: 18, color: C.ink),
-              ]),
+    );
+  }
+
+  // ---------------------------------------------------------------- Widget absensi
+
+  Widget _attendanceWidget(BuildContext context, AppState s) {
+    final now = DateTime.now();
+    final att = s.today;
+    final st = s.todayStatus;
+    final canOut = att != null && att.checkOutAt == null;
+    final done = att?.checkOutAt != null;
+
+    // Absensi yang belum dikonfirmasi server tidak boleh tampil sebagai terverifikasi.
+    final (String chipText, Color chipBg, Color chipFg, IconData chipIcon) = att != null && !att.synced
+        ? ('Menunggu server · ${hm(att.checkOutAt ?? att.checkInAt)}', C.accentSoft, C.ink, Icons.hourglass_top_rounded)
+        : switch (st) {
+            AttendanceStatus.notCheckedIn => ('Belum absen', C.warningSoft, C.warning, Icons.schedule_rounded),
+            AttendanceStatus.pending => ('Menunggu sinkronisasi', C.accentSoft, C.ink, Icons.sync_rounded),
+            AttendanceStatus.present => ('Hadir ${hm(att!.checkInAt)}${att.offlineTime ? ' · offline' : ''}', C.successSoft, C.success, Icons.check_circle_rounded),
+            AttendanceStatus.late => ('Terlambat ${hm(att!.checkInAt)}${att.offlineTime ? ' · offline' : ''}', C.warningSoft, C.warning, Icons.watch_later_rounded),
+            AttendanceStatus.checkedOut => ('Pulang ${hm(att!.checkOutAt!)}${att.offlineTime ? ' · offline' : ''}', C.successSoft, C.success, Icons.logout_rounded),
+            AttendanceStatus.needsAttention => ('Perlu perhatian', C.errorSoft, C.error, Icons.error_outline_rounded),
+          };
+
+    final actionLabel = done ? 'Sudah absen pulang' : (canOut ? 'Absen pulang' : 'Absen masuk');
+    void open() => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CheckInScreen(isOut: canOut)));
+
+    return Container(
+      padding: const EdgeInsets.all(S.x5),
+      decoration: BoxDecoration(color: C.nightSurface, borderRadius: BorderRadius.circular(R.widget)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Absensi hari ini', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.onNight, letterSpacing: -.2)),
+        const SizedBox(height: S.x1),
+        Text('Jam kerja ${minToHm(s.workStartMin)} – ${minToHm(s.workEndMin)}', style: const TextStyle(fontSize: 13, color: C.onNight2)),
+        const SizedBox(height: S.x3),
+        Wrap(spacing: S.x3, runSpacing: S.x2, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          StatusChip(chipText, bg: chipBg, fg: chipFg, icon: chipIcon),
+          Semantics(
+            label: 'Hadir beruntun ${s.streak} hari',
+            excludeSemantics: true,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.local_fire_department_rounded, size: 18, color: C.accent),
+              const SizedBox(width: 2),
+              Text('${s.streak} hari', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: C.onNight)),
+            ]),
+          ),
+        ]),
+        const SizedBox(height: S.x4),
+        _WeekRow(presence: s.weekPresence, todayIndex: now.weekday - 1),
+        const SizedBox(height: S.x4),
+        SizedBox(
+          height: 52,
+          child: FilledButton.icon(
+            onPressed: done ? null : open,
+            icon: Icon(done ? Icons.check_rounded : Icons.photo_camera_outlined, size: 20),
+            label: Text(actionLabel, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+            style: FilledButton.styleFrom(
+              backgroundColor: C.accent,
+              foregroundColor: C.ink,
+              disabledBackgroundColor: const Color(0xFF4A4946),
+              disabledForegroundColor: C.onNight2,
+              shape: const StadiumBorder(),
             ),
           ),
         ),
-      const SizedBox(height: S.x3),
+      ]),
+    );
+  }
 
-      // Streak + progres
-      IntrinsicHeight(
-        child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(R.card),
-              child: Container(
-                color: C.skySoft,
-                padding: const EdgeInsets.all(S.x4),
-                child: Stack(fit: StackFit.passthrough, children: [
-                  const Positioned(right: -22, bottom: -22, child: GeoDecor(a: Color(0x558CC8EE), b: Color(0x33FFFFFF), size: 96)),
-                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Icon(Icons.local_fire_department_rounded, color: C.ink, size: 24),
-                    const SizedBox(height: S.x2),
-                    Text('${s.streak}', style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w900, color: C.ink, height: 1, letterSpacing: -1)),
+  // ---------------------------------------------------------------- Jadwal + Memories
+
+  Widget _scheduleAndMemories(BuildContext context, AppState s, DateTime now) {
+    final h = MediaQuery.textScalerOf(context).scale(176);
+    // Tanpa CrossAxisAlignment.stretch: di dalam scroll view tinggi tak terbatas, stretch membuat layout gagal.
+    return Row(children: [
+      Expanded(child: SizedBox(height: h, child: _scheduleWidget(s, now))),
+      const SizedBox(width: S.x3),
+      Expanded(child: SizedBox(height: h, child: _memoriesWidget(s))),
+    ]);
+  }
+
+  Widget _scheduleWidget(AppState s, DateTime now) {
+    final next = s.nextSchedule(now);
+    final live = next != null && next.effective(now) == ScheduleStatus.inProgress && next.startMin <= now.hour * 60 + now.minute;
+    final total = s.schedule.length;
+    final label = next == null
+        ? (total == 0 ? 'Jadwal: belum ada jadwal hari ini' : 'Jadwal: tidak ada kegiatan berikutnya')
+        : 'Jadwal: ${live ? 'berlangsung' : 'berikutnya'}, ${next.title}, pukul ${next.timeLabel}';
+
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      child: Material(
+        color: C.nightSurface,
+        borderRadius: BorderRadius.circular(R.widget),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => widget.onGoTo(1),
+          child: Padding(
+            padding: const EdgeInsets.all(S.x4),
+            child: next == null
+                ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Icon(Icons.event_available_rounded, color: C.accent, size: 26),
+                    const Spacer(),
+                    Text(total == 0 ? 'Belum ada jadwal' : 'Tidak ada kegiatan berikutnya', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: C.onNight)),
                     const SizedBox(height: S.x1),
-                    const Text('Hari hadir\nberuntun', style: TextStyle(fontSize: 12, color: Color(0xFF2F3A44), height: 1.25)),
+                    Text(total == 0 ? 'Ketuk untuk menambah' : '${s.tasksDone}/$total selesai', style: const TextStyle(fontSize: 12, color: C.onNight2)),
+                  ])
+                : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    live
+                        ? const StatusChip('Berlangsung', bg: C.accent, fg: C.ink, icon: Icons.play_arrow_rounded)
+                        : const Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.schedule_rounded, size: 16, color: C.accent),
+                            SizedBox(width: 4),
+                            Text('Berikutnya', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: C.onNight2)),
+                          ]),
+                    const SizedBox(height: S.x2),
+                    Text(next.timeLabel, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: C.onNight, height: 1, letterSpacing: -.5)),
+                    const SizedBox(height: S.x1),
+                    Text(next.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: C.onNight, height: 1.2)),
+                    if (next.place.isNotEmpty) Text(next.place, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: C.onNight2)),
+                    const Spacer(),
+                    Text('${s.tasksDone}/$total selesai', style: const TextStyle(fontSize: 12, color: C.onNight2)),
                   ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _memoriesWidget(AppState s) {
+    final m = s.memories.isEmpty ? null : s.memories.first;
+    final path = m?.photoPath;
+    Widget placeholder(IconData icon) => ColoredBox(color: C.night, child: Center(child: Icon(icon, size: 34, color: C.onNight2)));
+    return Semantics(
+      button: true,
+      label: m == null ? 'Memories: belum ada dokumentasi' : 'Memories: ${m.title}',
+      excludeSemantics: true,
+      child: Material(
+        color: C.nightSurface,
+        borderRadius: BorderRadius.circular(R.widget),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => m == null ? widget.onGoTo(2) : Navigator.of(context).push(MaterialPageRoute(builder: (_) => MemoryDetailScreen(id: m.id))),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(
+              child: path != null
+                  ? Image.file(File(path), fit: BoxFit.cover, cacheWidth: 400, gaplessPlayback: true, errorBuilder: (_, __, ___) => placeholder(Icons.broken_image_outlined))
+                  : placeholder(Icons.photo_camera_outlined),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(S.x3, S.x2, S.x3, S.x3),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Memories', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: C.onNight2)),
+                Text(m == null ? 'Belum ada dokumentasi' : m.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: C.onNight)),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------- Pengingat & status sinkronisasi
+
+  Widget _reminderPill(BuildContext context, AppState s) {
+    final r = s.nextReminder;
+    return _Pill(
+      icon: _reminderIcon(r?.type),
+      text: r == null ? 'Tidak ada pengingat tersisa hari ini' : '${r.title} · ${minToHm(r.atMin)}',
+      semantics: r == null ? 'Pengingat: tidak ada yang tersisa hari ini' : 'Pengingat berikutnya: ${r.title}, pukul ${minToHm(r.atMin)}',
+      onTap: () => _push(const RemindersScreen()),
+    );
+  }
+
+  /// Petunjuk status penyimpanan online (offline / belum masuk / antrean).
+  List<Widget> _syncHint(AppState s) {
+    String? text;
+    VoidCallback? onTap;
+    if (!s.backendConfigured) {
+      text = 'Server belum dikonfigurasi · absensi hanya di perangkat';
+      onTap = () => _push(const SettingsScreen());
+    } else if (!s.signedIn) {
+      text = 'Masuk agar absensi tersimpan online';
+      onTap = () => _push(const AuthScreen());
+    } else if (s.sync.pending > 0) {
+      text = '${s.sync.pending} item menunggu sinkronisasi · ketuk untuk coba lagi';
+      onTap = () => s.sync.retryPending();
+    }
+    if (text == null) return const [];
+    return [
+      const SizedBox(height: S.x2),
+      _Pill(icon: Icons.cloud_off_outlined, text: text, semantics: text, onTap: onTap, bg: C.warningSoft, fg: C.ink, iconColor: C.warning),
+    ];
+  }
+
+  // ---------------------------------------------------------------- Pintasan
+
+  Widget _shortcuts(BuildContext context) {
+    final items = <(IconData, String, VoidCallback)>[
+      (Icons.calendar_today_rounded, 'Jadwal', () => widget.onGoTo(1)),
+      (Icons.photo_library_outlined, 'Memories', () => widget.onGoTo(2)),
+      (Icons.notifications_none_rounded, 'Pengingat', () => _push(const RemindersScreen())),
+      (Icons.settings_outlined, 'Pengaturan', () => _push(const SettingsScreen())),
+    ];
+    return Row(children: [
+      for (final it in items)
+        Expanded(
+          child: Semantics(
+            button: true,
+            label: it.$2,
+            excludeSemantics: true,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(R.small),
+              onTap: it.$3,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: S.x1),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: const BoxDecoration(color: C.nightSurface, shape: BoxShape.circle),
+                    child: Icon(it.$1, color: C.accent, size: 24),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(it.$2, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: C.onNight2)),
                 ]),
               ),
             ),
           ),
-          const SizedBox(width: S.x3),
-          Expanded(
-            child: SnoopCard(
-              color: C.surface,
-              radius: R.card,
-              padding: const EdgeInsets.all(S.x4),
-              onTap: () => onGoTo(1),
-              child: Row(children: [
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Icon(Icons.task_alt_rounded, color: C.ink, size: 24),
-                    const SizedBox(height: S.x2),
-                    Text('$doneTasks/$total', style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900, color: C.ink, height: 1, letterSpacing: -1)),
-                    const SizedBox(height: S.x1),
-                    const Text('Tugas\nselesai', style: TextStyle(fontSize: 12, color: C.text2, height: 1.25)),
-                  ]),
-                ),
-                _Ring(value: total == 0 ? 0 : doneTasks / total),
-              ]),
-            ),
-          ),
-        ]),
-      ),
-
-      // Jadwal
-      SectionHeader('Jadwal hari ini', action: 'Lihat semua', onAction: () => onGoTo(1)),
-      if (s.schedule.isEmpty) const EmptyState('Belum ada jadwal hari ini.\nTambahkan di halaman Jadwal.'),
-      for (final it in s.schedule.take(5))
-        Padding(
-          padding: const EdgeInsets.only(bottom: S.x2),
-          child: _ScheduleTile(item: it, now: now, onTap: () => onGoTo(1)),
         ),
+    ]);
+  }
 
-      // Pengingat
-      SectionHeader('Pengingat berikutnya', action: 'Lihat semua', onAction: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RemindersScreen()))),
-      SnoopCard(
-        radius: R.small,
-        child: Row(children: [
-          Container(
-            padding: const EdgeInsets.all(S.x3),
-            decoration: const BoxDecoration(color: C.skySoft, shape: BoxShape.circle),
-            child: Icon(_reminderIcon(reminder?.type), size: 22, color: C.ink),
-          ),
-          const SizedBox(width: S.x3),
-          Expanded(
-            child: reminder == null
-                ? Text('Tidak ada pengingat tersisa hari ini', style: Theme.of(context).textTheme.bodySmall)
-                : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(reminder.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                    Text('Pukul ${minToHm(reminder.atMin)}', style: Theme.of(context).textTheme.bodySmall),
-                  ]),
-          ),
-        ]),
-      ),
+  // ---------------------------------------------------------------- Favorit
 
-      // Memories: baris statis (bukan list horizontal) agar swipe ke App Drawer tidak terhalang
-      SectionHeader('Memories terbaru', action: 'Lihat semua', onAction: () => onGoTo(2)),
-      if (s.memories.isEmpty)
-        const EmptyState('Belum ada dokumentasi.\nFoto absensi akan muncul di sini.')
-      else
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          for (var i = 0; i < s.memories.length && i < 2; i++) ...[
-            if (i > 0) const SizedBox(width: S.x4),
-            Expanded(
-              child: PolaroidCard(
-                photoPath: s.memories[i].photoPath, title: s.memories[i].title, meta: s.memories[i].meta, place: s.memories[i].placeName,
-                angle: i.isEven ? -2 : 2, photoHeight: 100,
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => MemoryDetailScreen(id: s.memories[i].id))),
+  Widget _favorites(BuildContext context) {
+    final s = AppScope.of(context);
+    return ValueListenableBuilder<List<AppEntry>?>(
+      valueListenable: LauncherService.listenable,
+      builder: (ctx, apps, _) {
+        final favs = (apps ?? const <AppEntry>[]).where((a) => s.favorites.contains(a.package)).take(8).toList();
+        if (favs.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.only(top: S.x4, left: S.x1, right: S.x1),
+            child: Text('Favorit: tahan lama aplikasi di daftar aplikasi, lalu pilih "Jadikan favorit".', style: TextStyle(fontSize: 12, color: C.onNight2, height: 1.3)),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.only(top: S.x5),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Padding(
+              padding: EdgeInsets.only(left: S.x1, bottom: S.x2),
+              child: Text('Favorit', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: C.onNight2)),
+            ),
+            Wrap(spacing: S.x2, runSpacing: S.x2, children: [
+              for (final a in favs)
+                SizedBox(
+                  width: 72,
+                  child: AppTile(app: a, iconSize: 48, onTap: () => launchApp(ctx, a), onLongPress: () => showAppActions(ctx, a)),
+                ),
+            ]),
+          ]),
+        );
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------- Dock
+
+  Widget _dock(BuildContext context, AppState s) {
+    final bottom = MediaQuery.paddingOf(context).bottom;
+    return ValueListenableBuilder<List<AppEntry>?>(
+      valueListenable: LauncherService.listenable,
+      builder: (ctx, apps, _) {
+        final byPkg = {for (final a in apps ?? const <AppEntry>[]) a.package: a};
+        // Aplikasi yang sudah dihapus dilewati; tidak ada ikon bawaan yang dianggap wajib.
+        final items = [for (final p in s.dock) if (byPkg[p] != null) byPkg[p]!];
+        return Padding(
+          padding: EdgeInsets.fromLTRB(S.x4, S.x2, S.x4, bottom + S.x2),
+          child: Material(
+            color: C.nightSurface,
+            shape: const StadiumBorder(),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              // Geser ke atas pada dock membuka App Drawer (tidak bentrok dengan gesture sistem di tepi layar).
+              onVerticalDragEnd: (d) { if ((d.primaryVelocity ?? 0) < -250) widget.onOpenDrawer(); },
+              child: Padding(
+                padding: const EdgeInsets.all(S.x2),
+                child: Row(children: [
+                  if (items.isEmpty)
+                    const Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: S.x4),
+                        child: Text('Tahan lama aplikasi di daftar aplikasi untuk menambah ke dock', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: C.onNight2, height: 1.25)),
+                      ),
+                    )
+                  else
+                    for (final a in items)
+                      Expanded(
+                        child: Center(
+                          child: Semantics(
+                            button: true,
+                            label: a.label,
+                            excludeSemantics: true,
+                            child: InkResponse(
+                              radius: 30,
+                              onTap: () => launchApp(ctx, a),
+                              onLongPress: () => showAppActions(ctx, a),
+                              child: SizedBox(width: 56, height: 56, child: Center(child: AppIcon(a, size: 44))),
+                            ),
+                          ),
+                        ),
+                      ),
+                  Semantics(
+                    button: true,
+                    label: 'Buka semua aplikasi',
+                    excludeSemantics: true,
+                    child: Material(
+                      color: C.accent,
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: widget.onOpenDrawer,
+                        child: const SizedBox(width: 56, height: 56, child: Icon(Icons.apps_rounded, color: C.ink, size: 26)),
+                      ),
+                    ),
+                  ),
+                ]),
               ),
             ),
-          ],
-          if (s.memories.length == 1) const Expanded(child: SizedBox()),
-        ]),
-
-      const SizedBox(height: S.x4),
-      Center(
-        child: TextButton.icon(
-          onPressed: onOpenDrawer,
-          icon: const Icon(Icons.swipe_right_alt_rounded, size: 20),
-          label: const Text('Geser ke kanan untuk aplikasi'),
-          style: TextButton.styleFrom(foregroundColor: C.text2, minimumSize: const Size(48, 48)),
-        ),
-      ),
-    ];
-
-    // Animasi masuk bertahap untuk enam blok pertama (hanya sekali saat Home pertama dibangun).
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(S.x4, S.x3, S.x4, S.x6),
-      children: [
-        for (var i = 0; i < children.length; i++) i < 6 ? Reveal(index: i, child: children[i]) : children[i],
-      ],
+          ),
+        );
+      },
     );
   }
 
@@ -273,14 +470,15 @@ class HomeScreen extends StatelessWidget {
       };
 }
 
-/// Jam dengan timer sendiri: hanya widget ini yang rebuild tiap 20 detik, bukan seluruh Home.
-class _Clock extends StatefulWidget {
-  const _Clock();
+/// Membangun ulang hanya subtree-nya tiap 20 detik (jam, sapaan, kegiatan berikutnya), bukan seluruh Home.
+class _Tick extends StatefulWidget {
+  final Widget Function(BuildContext, DateTime) builder;
+  const _Tick({required this.builder});
   @override
-  State<_Clock> createState() => _ClockState();
+  State<_Tick> createState() => _TickState();
 }
 
-class _ClockState extends State<_Clock> {
+class _TickState extends State<_Tick> {
   DateTime _now = DateTime.now();
   Timer? _t;
   @override
@@ -298,24 +496,42 @@ class _ClockState extends State<_Clock> {
   }
 
   @override
-  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(dateLong(_now), style: Theme.of(context).textTheme.bodySmall),
-        Text(hm(_now), style: const TextStyle(fontSize: 64, fontWeight: FontWeight.w900, color: C.text, height: 1.05, letterSpacing: -2)),
-      ]);
+  Widget build(BuildContext context) => widget.builder(context, _now);
 }
 
-class _Ring extends StatelessWidget {
-  final double value;
-  const _Ring({required this.value});
+class _Pill extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final String semantics;
+  final VoidCallback? onTap;
+  final Color bg;
+  final Color fg;
+  final Color iconColor;
+  const _Pill({required this.icon, required this.text, required this.semantics, this.onTap, this.bg = C.nightSurface, this.fg = C.onNight, this.iconColor = C.accent});
   @override
-  Widget build(BuildContext context) => SizedBox(
-        width: 44,
-        height: 44,
-        child: TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0, end: value),
-          duration: const Duration(milliseconds: 700),
-          curve: Curves.easeOutCubic,
-          builder: (_, v, __) => CircularProgressIndicator(value: v, strokeWidth: 7, strokeCap: StrokeCap.round, backgroundColor: C.soft, color: C.ink),
+  Widget build(BuildContext context) => Semantics(
+        button: onTap != null,
+        label: semantics,
+        excludeSemantics: true,
+        child: Material(
+          color: bg,
+          shape: const StadiumBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 52),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: S.x4, vertical: S.x2),
+                child: Row(children: [
+                  Icon(icon, size: 20, color: iconColor),
+                  const SizedBox(width: S.x3),
+                  Expanded(child: Text(text, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: fg))),
+                  if (onTap != null) Icon(Icons.chevron_right_rounded, size: 20, color: fg),
+                ]),
+              ),
+            ),
+          ),
         ),
       );
 }
@@ -323,66 +539,28 @@ class _Ring extends StatelessWidget {
 class _WeekRow extends StatelessWidget {
   final List<bool> presence;
   final int todayIndex;
-  final Color fg;
-  final Color muted;
-  final bool onPrimary;
-  const _WeekRow({required this.presence, required this.todayIndex, required this.fg, required this.muted, required this.onPrimary});
+  const _WeekRow({required this.presence, required this.todayIndex});
 
   @override
   Widget build(BuildContext context) => Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         for (var i = 0; i < 7; i++)
           Semantics(
             label: '${kDays[i]}: ${presence[i] ? 'hadir' : (i > todayIndex ? 'belum' : 'tidak ada absensi')}',
+            excludeSemantics: true,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Container(
-                width: 34,
-                height: 34,
+                width: 32,
+                height: 32,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: presence[i] ? (onPrimary ? C.ink : C.sky) : Colors.transparent,
-                  border: presence[i] ? null : Border.all(color: i == todayIndex ? fg : muted.withValues(alpha: .5), width: i == todayIndex ? 2 : 1),
+                  color: presence[i] ? C.accent : Colors.transparent,
+                  border: presence[i] ? null : Border.all(color: i == todayIndex ? C.onNight : C.onNight2.withValues(alpha: .5), width: i == todayIndex ? 2 : 1),
                 ),
-                child: presence[i] ? Icon(Icons.check_rounded, size: 18, color: onPrimary ? Colors.white : C.ink) : null,
+                child: presence[i] ? const Icon(Icons.check_rounded, size: 18, color: C.ink) : null,
               ),
               const SizedBox(height: S.x1),
-              Text(kDaysShort[i], style: TextStyle(fontSize: 11, color: i == todayIndex ? fg : muted, fontWeight: i == todayIndex ? FontWeight.w800 : FontWeight.w400)),
+              Text(kDaysShort[i], style: TextStyle(fontSize: 11, color: i == todayIndex ? C.onNight : C.onNight2, fontWeight: i == todayIndex ? FontWeight.w800 : FontWeight.w400)),
             ]),
           ),
       ]);
-}
-
-class _ScheduleTile extends StatelessWidget {
-  final ScheduleItem item;
-  final DateTime now;
-  final VoidCallback onTap;
-  const _ScheduleTile({required this.item, required this.now, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final status = item.effective(now);
-    final live = status == ScheduleStatus.inProgress;
-    final done = status == ScheduleStatus.completed;
-    return SnoopCard(
-      radius: R.small,
-      color: live ? C.ink : C.surface,
-      padding: const EdgeInsets.symmetric(horizontal: S.x4, vertical: S.x3),
-      onTap: onTap,
-      child: Row(children: [
-        Icon(done ? Icons.check_circle_rounded : (live ? Icons.play_circle_fill_rounded : Icons.radio_button_unchecked_rounded),
-            size: 22, color: done ? C.success : (live ? C.sky : C.text2)),
-        const SizedBox(width: S.x3),
-        Text(item.timeLabel, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: live ? Colors.white : C.text)),
-        const SizedBox(width: S.x3),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: live ? Colors.white : C.text, decoration: done ? TextDecoration.lineThrough : null)),
-            if (item.place.isNotEmpty)
-              Text(item.place, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: live ? const Color(0xFFC3C8CE) : C.text2)),
-          ]),
-        ),
-        if (live) const StatusChip('Berlangsung', bg: C.sky, fg: C.ink),
-      ]),
-    );
-  }
 }

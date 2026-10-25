@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class AppEntry {
@@ -13,12 +14,28 @@ class LauncherService {
 
   static List<AppEntry>? _cache;
   static DateTime? _cachedAt;
+  static VoidCallback? _onHome;
+
+  /// Diperbarui setiap daftar aplikasi berhasil dimuat; Home (dock/favorit) dan App Drawer mendengarkan ini.
+  static final ValueNotifier<List<AppEntry>?> listenable = ValueNotifier<List<AppEntry>?>(null);
+
+  /// True bila pemuatan terakhir gagal di sisi native (bukan sekadar daftar kosong).
+  static bool failed = false;
 
   /// Daftar terakhir yang berhasil dimuat (null bila belum pernah dimuat).
   static List<AppEntry>? get cached => _cache;
 
   /// True bila cache belum ada atau sudah lebih dari 30 detik.
   static bool get stale => _cachedAt == null || DateTime.now().difference(_cachedAt!) > const Duration(seconds: 30);
+
+  /// Mendaftarkan callback untuk tombol Home saat SNOOP sudah berjalan (dikirim native lewat onNewIntent).
+  static void setHomeHandler(VoidCallback? cb) {
+    _onHome = cb;
+    _ch.setMethodCallHandler(cb == null ? null : (call) async {
+      if (call.method == 'onHome') _onHome?.call();
+      return null;
+    });
+  }
 
   /// Memuat aplikasi terpasang. Hasil di-cache (ikon dan label) agar membuka
   /// App Drawer berulang tidak memuat ulang dari sistem; `force` memaksa muat ulang.
@@ -30,14 +47,23 @@ class LauncherService {
         ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
       _cache = list;
       _cachedAt = DateTime.now();
+      failed = false;
+      listenable.value = list;
       return list;
     } on MissingPluginException {
-      return _demo; // dijalankan di non-Android / belum ada channel
-    } on PlatformException {
-      return const [];
+      _cache = _demo; // dijalankan di non-Android / belum ada channel
+      _cachedAt = DateTime.now();
+      failed = false;
+      listenable.value = _demo;
+      return _demo;
+    } catch (_) {
+      failed = true;
+      // Pertahankan daftar lama bila ada, supaya dock/favorit tidak hilang karena kegagalan sesaat.
+      return _cache ?? const [];
     }
   }
 
+  /// Mengembalikan false bila aplikasi tidak bisa dibuka (dihapus, dinonaktifkan, atau ditolak sistem).
   static Future<bool> launch(String pkg) async {
     try { return await _ch.invokeMethod<bool>('launch', {'package': pkg}) ?? false; } catch (_) { return false; }
   }

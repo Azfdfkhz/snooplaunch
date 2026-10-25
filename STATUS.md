@@ -48,3 +48,6 @@
 - Drive: Edge Function `supabase/functions/drive-upload` (OAuth refresh token di Secrets server). Panduan: `supabase/SETUP.md`.
 - UI: logo geometris SnoopMark, kartu berlekuk (NotchCard) dengan tombol bulat, nav kapsul gelap, tipografi besar/berat, cincin progres, animasi masuk. Tema gelap dinonaktifkan sementara (token warna masih statis terang).
 - Tes: `test/state_test.dart` (belum dijalankan).
+
+## Update 1.0.0 — Launcher UI/UX Redesign (BELUM dikompilasi)
+Ringkasan: palet kuning/charcoal, Home berpanel organik + widget Absensi/Jadwal/Memories + dock, App Drawer gelap dengan pencarian lintas kategori, swipe-up dock, tombol Home native, onboarding sekali. Rincian, daftar file, dan keterbatasan: lihat `UPDATE_1_0_0_REPORT.md`.

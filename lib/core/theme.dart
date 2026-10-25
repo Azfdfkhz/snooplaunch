@@ -3,29 +3,36 @@ import 'package:flutter/material.dart';
 /// Design tokens SNOOP. Semua warna, radius, dan spacing didefinisikan di sini
 /// agar widget tidak menulis nilai berulang. Nama lama (pink/mint/blue) dipertahankan
 /// supaya layar yang belum dimigrasi tetap ter-compile, tetapi nilainya mengikuti
-/// palet baru: sky blue + ivory + charcoal.
+/// palet Update 1.0.0: kuning hangat + charcoal + ivory.
 class C {
-  // Permukaan
-  static const bg = Color(0xFFF7F5EF);        // ivory
+  // Permukaan terang (halaman pendukung)
+  static const bg = Color(0xFFF5F3ED);        // ivory
   static const surface = Color(0xFFFFFFFF);
-  static const soft = Color(0xFFECE9E0);      // permukaan sekunder hangat
-  static const border = Color(0xFFDCD8CC);
-  // Teks
-  static const text = Color(0xFF1F2328);      // charcoal
-  static const text2 = Color(0xFF666B73);     // kontras >= 4.5:1 di atas ivory
+  static const soft = Color(0xFFEAE6DC);      // permukaan sekunder hangat
+  static const border = Color(0xFFD9D4C8);
+  // Teks pada permukaan terang
+  static const text = Color(0xFF252422);      // charcoal
+  static const text2 = Color(0xFF5E5A52);     // kontras >= 4.5:1 di atas ivory & soft
   // Aksen
-  static const sky = Color(0xFF8CC8EE);       // primary
-  static const skySoft = Color(0xFFDCEFFA);
-  static const ink = Color(0xFF1F2328);       // kontras utama (kartu gelap)
+  static const accent = Color(0xFFF4BD22);    // kuning hangat (panel utama, aksi utama)
+  static const accentSoft = Color(0xFFFBEFC4);
+  static const ink = Color(0xFF252422);       // teks/tombol gelap di atas permukaan terang atau kuning
+  // Permukaan gelap (Home, dock, App Drawer)
+  static const night = Color(0xFF252422);
+  static const nightSurface = Color(0xFF383735);
+  static const onNight = Color(0xFFFFFFFF);
+  static const onNight2 = Color(0xFFD0CCC3);  // teks sekunder di atas night / nightSurface
+  // Status. Kuning aksen tidak dipakai sebagai penanda status; setiap status juga punya ikon + teks.
   static const success = Color(0xFF2F7D55);
   static const successSoft = Color(0xFFD9EFE2);
-  static const warning = Color(0xFFB7791F);
-  static const warningSoft = Color(0xFFFBEBCB);
+  static const warning = Color(0xFF9A4A00);
+  static const warningSoft = Color(0xFFFDE3CC);
   static const error = Color(0xFFC8434A);
-  // Alias lama
-  static const blue = skySoft;
+  static const errorSoft = Color(0xFFF8D9DB);
+  // Alias lama (layar yang belum dimigrasi)
+  static const blue = accentSoft;
   static const mint = successSoft;
-  static const pink = Color(0xFFF6D5C6);      // aksen sekunder pastel (persik), pakai terbatas
+  static const pink = Color(0xFFF6D5C6);
   static const orange = warning;
   static const orangeSoft = warningSoft;
   static const red = error;
@@ -36,17 +43,18 @@ class R {
   static const card = 28.0;
   static const small = 20.0;
   static const pill = 40.0;
+  static const widget = 28.0; // widget Home & dock
 }
 
 class S {
-  static const x1 = 4.0, x2 = 8.0, x3 = 12.0, x4 = 16.0, x5 = 20.0, x6 = 24.0;
+  static const x1 = 4.0, x2 = 8.0, x3 = 12.0, x4 = 16.0, x5 = 20.0, x6 = 24.0, x8 = 32.0;
 }
 
 ThemeData snoopTheme({bool dark = false}) {
   // Catatan: seluruh widget memakai token statis `C` (terang). Tema gelap penuh membutuhkan
   // token yang sadar-tema, jadi untuk sementara aplikasi selalu memakai tema terang.
   const brightness = Brightness.light;
-  final scheme = ColorScheme.fromSeed(seedColor: C.sky, brightness: brightness, surface: C.bg, primary: C.ink, secondary: C.sky);
+  final scheme = ColorScheme.fromSeed(seedColor: C.accent, brightness: brightness, surface: C.bg, primary: C.ink, secondary: C.accent);
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,

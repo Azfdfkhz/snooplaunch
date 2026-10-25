@@ -32,6 +32,11 @@ class AppState extends ChangeNotifier {
   List<Memory> memories = [];
   List<Attendance> attendance = [];
   Set<String> favorites = {};
+  /// Aplikasi di dock Home (urutan dipertahankan, maksimal [dockMax]).
+  List<String> dock = [];
+  static const dockMax = 4;
+  /// False sampai pengguna menekan "Mulai" pada layar pembuka; setelah itu launcher langsung ke Home.
+  bool onboarded = false;
   String theme = 'Terang';
   bool busy = false; // cegah tap ganda
   final HybridSyncService sync = HybridSyncService();
@@ -67,6 +72,8 @@ class AppState extends ChangeNotifier {
     memories = readList('memories', Memory.fromJson);
     attendance = readList('attendance', Attendance.fromJson);
     favorites = (_p!.getStringList('favorites') ?? []).toSet();
+    dock = (_p!.getStringList('dock') ?? []).take(dockMax).toList();
+    onboarded = _p!.getBool('onboarded') ?? false;
     if (schedule.isEmpty) {
       schedule = [
         ScheduleItem(id: 's1', title: 'Absen Masuk', place: 'Kantor', startMin: 8 * 60),
@@ -222,6 +229,8 @@ class AppState extends ChangeNotifier {
     await p.setString('memories', jsonEncode(memories.map((e) => e.toJson()).toList()));
     await p.setString('attendance', jsonEncode(attendance.map((e) => e.toJson()).toList()));
     await p.setStringList('favorites', favorites.toList());
+    await p.setStringList('dock', dock);
+    await p.setBool('onboarded', onboarded);
   }
 
   void changed() { notifyListeners(); _save(); }
@@ -343,6 +352,36 @@ class AppState extends ChangeNotifier {
   void toggleFavorite(String pkg) {
     favorites.contains(pkg) ? favorites.remove(pkg) : favorites.add(pkg);
     changed();
+  }
+
+  bool inDock(String pkg) => dock.contains(pkg);
+
+  /// Menambah/menghapus dari dock. Mengembalikan false bila dock penuh (tidak ada perubahan).
+  bool toggleDock(String pkg) {
+    if (dock.contains(pkg)) {
+      dock.remove(pkg);
+    } else {
+      if (dock.length >= dockMax) return false;
+      dock.add(pkg);
+    }
+    changed();
+    return true;
+  }
+
+  void completeOnboarding() { onboarded = true; changed(); }
+
+  /// Kegiatan yang sedang berlangsung, atau kegiatan terdekat berikutnya (null bila tidak ada).
+  ScheduleItem? nextSchedule(DateTime now) {
+    final n = now.hour * 60 + now.minute;
+    final sorted = [...schedule]..sort((a, b) => a.startMin.compareTo(b.startMin));
+    // Kegiatan tanpa jam selesai dianggap berlangsung 30 menit saja (bukan sepanjang sisa hari).
+    for (final it in sorted) {
+      if (it.effective(now) == ScheduleStatus.inProgress && (it.endMin != null || n < it.startMin + 30)) return it;
+    }
+    for (final it in sorted) {
+      if (it.status == ScheduleStatus.upcoming && it.startMin >= n) return it;
+    }
+    return null;
   }
 
   /// Jadwal yang relevan dengan waktu sekarang (untuk menautkan dokumentasi).

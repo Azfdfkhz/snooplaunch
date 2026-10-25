@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'core/state.dart';
 import 'core/theme.dart';
+import 'screens/shell.dart';
 import 'screens/splash_screen.dart';
 
 class AppScope extends InheritedNotifier<AppState> {
@@ -43,7 +44,8 @@ class SnoopApp extends StatelessWidget {
             title: 'SNOOP',
             debugShowCheckedModeBanner: false,
             theme: snoopTheme(),
-            home: const SplashScreen(),
+            // Launcher langsung ke Home; layar pembuka hanya muncul sekali (onboarding).
+            home: state.onboarded ? const Shell() : const SplashScreen(),
           );
         },
       );
