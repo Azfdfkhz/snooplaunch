@@ -76,6 +76,16 @@ class LauncherService {
     try { await _ch.invokeMethod('openHomeSettings'); } catch (_) {}
   }
 
+  /// Meminta SNOOP sebagai launcher default (dialog sistem). Mengembalikan:
+  /// already | granted | declined | fallback (membuka pengaturan) | requested (permintaan lain masih berjalan).
+  static Future<String> requestHome() async {
+    try { return (await _ch.invokeMethod<String>('requestHome')) ?? 'fallback'; } catch (_) { return 'fallback'; }
+  }
+
+  static Future<bool> isHomeDefault() async {
+    try { return (await _ch.invokeMethod<bool>('isHomeDefault')) ?? false; } catch (_) { return false; }
+  }
+
   static const _demo = [
     AppEntry('WhatsApp', 'com.whatsapp', null),
     AppEntry('Chrome', 'com.android.chrome', null),

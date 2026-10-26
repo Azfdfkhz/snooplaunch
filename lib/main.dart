@@ -44,11 +44,21 @@ class SnoopApp extends StatelessWidget {
             title: 'SNOOP',
             debugShowCheckedModeBanner: false,
             theme: snoopTheme(),
+            // Gulir memantul seperti iOS, tanpa efek glow Android.
+            scrollBehavior: const _SnoopScroll(),
             // Launcher langsung ke Home; layar pembuka hanya muncul sekali (onboarding).
             home: state.onboarded ? const Shell() : const SplashScreen(),
           );
         },
       );
+}
+
+class _SnoopScroll extends MaterialScrollBehavior {
+  const _SnoopScroll();
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) => const BouncingScrollPhysics();
+  @override
+  Widget buildOverscrollIndicator(BuildContext context, Widget child, ScrollableDetails details) => child;
 }
 
 class _ErrorCard extends StatelessWidget {

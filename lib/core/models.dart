@@ -1,6 +1,9 @@
 import 'theme.dart';
 
-enum ScheduleStatus { upcoming, inProgress, completed, skipped, cancelled }
+enum ScheduleStatus { upcoming, inProgress, completed, skipped, cancelled, missed }
+
+/// Kunci tanggal yyyy-mm-dd (sama dengan dayKey di state.dart).
+String _dk(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
 class ScheduleItem {
   final String id;
@@ -8,20 +11,52 @@ class ScheduleItem {
   String place;
   int startMin;
   int? endMin;
-  ScheduleStatus status;
-  ScheduleItem({required this.id, required this.title, this.place = '', required this.startMin, this.endMin, this.status = ScheduleStatus.upcoming});
+  /// Tanggal (yyyy-mm-dd) untuk kegiatan yang hanya berlaku pada hari itu.
+  /// null = tetap setiap hari (hanya Absen Masuk dan Absen Pulang).
+  String? date;
+  /// Status per tanggal (yyyy-mm-dd -> indeks ScheduleStatus). Hanya keputusan manual yang disimpan.
+  /// Hari yang belum dicatat: hari ini dihitung dari jam, hari lalu = terlewat, hari depan = akan datang.
+  final Map<String, int> days;
+  ScheduleItem({required this.id, required this.title, this.place = '', required this.startMin, this.endMin, this.date, Map<String, int>? days})
+      : days = days ?? <String, int>{};
 
-  /// Status tampilan. Tidak pernah otomatis "completed" hanya karena waktu lewat (PRD FR-05).
+  /// Status berdasarkan jam saat ini (hanya relevan untuk hari ini).
   ScheduleStatus effective(DateTime now) {
-    if (status != ScheduleStatus.upcoming && status != ScheduleStatus.inProgress) return status;
     final n = now.hour * 60 + now.minute;
     if (n >= startMin && (endMin == null || n < endMin!)) return ScheduleStatus.inProgress;
     return ScheduleStatus.upcoming;
   }
 
-  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'place': place, 'start': startMin, 'end': endMin, 'status': status.index};
+  /// Status pada tanggal tertentu. Keputusan manual untuk tanggal itu selalu menang.
+  ScheduleStatus statusOn(DateTime day, DateTime now) {
+    final k = _dk(day);
+    final recorded = days[k];
+    if (recorded != null) return ScheduleStatus.values[recorded];
+    final today = _dk(now);
+    if (k == today) return effective(now);
+    return k.compareTo(today) < 0 ? ScheduleStatus.missed : ScheduleStatus.upcoming;
+  }
+
+  /// null = kembali ke status otomatis untuk tanggal itu.
+  void setDayStatus(DateTime day, ScheduleStatus? st) {
+    final k = _dk(day);
+    if (st == null) {
+      days.remove(k);
+    } else {
+      days[k] = st.index;
+    }
+  }
+
+  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'place': place, 'start': startMin, 'end': endMin, 'date': date, 'days': days};
   factory ScheduleItem.fromJson(Map<String, dynamic> j) => ScheduleItem(
-      id: j['id'], title: j['title'], place: j['place'] ?? '', startMin: j['start'], endMin: j['end'], status: ScheduleStatus.values[j['status']]);
+        id: j['id'],
+        title: j['title'],
+        place: j['place'] ?? '',
+        startMin: j['start'],
+        endMin: j['end'],
+        date: j['date'] as String?,
+        days: {for (final e in ((j['days'] as Map?) ?? const {}).entries) e.key as String: e.value as int},
+      );
   String get timeLabel => minToHm(startMin);
 }
 
@@ -32,10 +67,17 @@ class Reminder {
   String type; // air | istirahat | absen | dokumentasi | kustom
   int atMin;
   bool enabled;
-  Reminder({required this.id, required this.title, required this.detail, required this.type, required this.atMin, this.enabled = true});
-  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'detail': detail, 'type': type, 'at': atMin, 'enabled': enabled};
-  factory Reminder.fromJson(Map<String, dynamic> j) =>
-      Reminder(id: j['id'], title: j['title'], detail: j['detail'], type: j['type'], atMin: j['at'], enabled: j['enabled']);
+  /// 0 = sekali sehari. >0 = berulang tiap N menit dari [atMin] sampai jam pulang.
+  int intervalMin;
+  /// true = hanya Senin sampai Jumat.
+  bool workdaysOnly;
+  Reminder({required this.id, required this.title, required this.detail, required this.type, required this.atMin, this.enabled = true, this.intervalMin = 0, this.workdaysOnly = false});
+  /// Ringkasan yang ditampilkan di daftar pengingat.
+  String get summary => '${workdaysOnly ? 'Senin–Jumat' : 'Setiap hari'} · ${intervalMin > 0 ? 'tiap ${intervalMin ~/ 60} jam' : 'sekali sehari'}';
+  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'detail': detail, 'type': type, 'at': atMin, 'enabled': enabled, 'interval': intervalMin, 'workdays': workdaysOnly};
+  factory Reminder.fromJson(Map<String, dynamic> j) => Reminder(
+      id: j['id'], title: j['title'], detail: j['detail'], type: j['type'], atMin: j['at'], enabled: j['enabled'] ?? true,
+      intervalMin: (j['interval'] as int?) ?? 0, workdaysOnly: (j['workdays'] as bool?) ?? false);
 }
 
 /// Urutan enum disimpan sebagai indeks di data lama: nilai baru hanya boleh ditambah di akhir.
@@ -89,7 +131,7 @@ class Memory {
   bool get hasLocalPhoto => photoPath != null;
 }
 
-enum AttendanceStatus { notCheckedIn, pending, present, late, checkedOut, needsAttention }
+enum AttendanceStatus { notCheckedIn, pending, present, late, checkedOut, needsAttention, leave }
 
 class Attendance {
   String id; // diganti dengan id server bila server sudah punya catatan hari itu
@@ -103,15 +145,20 @@ class Attendance {
   /// True bila server memakai waktu perangkat (absen dikirim belakangan / offline).
   bool offlineTime;
   double? inLat, inLng, inAcc, outLat, outLng, outAcc;
+  /// Izin/sakit/lainnya (hanya bila status == leave).
+  String? leaveType;
+  String? note;
   Attendance({
     required this.id, required this.day, required this.checkInAt, this.checkOutAt, required this.status,
     this.synced = false, this.offlineTime = false,
     this.inLat, this.inLng, this.inAcc, this.outLat, this.outLng, this.outAcc,
+    this.leaveType, this.note,
   });
   Map<String, dynamic> toJson() => {
         'id': id, 'day': day, 'in': checkInAt.toIso8601String(), 'out': checkOutAt?.toIso8601String(), 'status': status.index,
         'synced': synced, 'offline': offlineTime,
         'inLat': inLat, 'inLng': inLng, 'inAcc': inAcc, 'outLat': outLat, 'outLng': outLng, 'outAcc': outAcc,
+        'leaveType': leaveType, 'note': note,
       };
   static double? _d(dynamic v) => (v as num?)?.toDouble();
   factory Attendance.fromJson(Map<String, dynamic> j) => Attendance(
@@ -120,5 +167,27 @@ class Attendance {
       status: AttendanceStatus.values[j['status']],
       synced: j['synced'] ?? false, offlineTime: j['offline'] ?? false,
       inLat: _d(j['inLat']), inLng: _d(j['inLng']), inAcc: _d(j['inAcc']),
-      outLat: _d(j['outLat']), outLng: _d(j['outLng']), outAcc: _d(j['outAcc']));
+      outLat: _d(j['outLat']), outLng: _d(j['outLng']), outAcc: _d(j['outAcc']),
+      leaveType: j['leaveType'] as String?, note: j['note'] as String?);
+}
+
+String leaveLabel(String? t) => switch (t) {
+      'izin' => 'Izin',
+      'sakit' => 'Sakit',
+      _ => 'Izin lainnya',
+    };
+
+/// Bukti penyelesaian tugas. kind: 'photo' | 'file' | 'link'. value: path berkas lokal atau URL.
+class TaskEvidence {
+  final String id;
+  final String scheduleId;
+  final String day; // yyyy-mm-dd, tanggal kegiatan
+  final String kind;
+  final String value;
+  final String label;
+  final DateTime createdAt;
+  TaskEvidence({required this.id, required this.scheduleId, required this.day, required this.kind, required this.value, required this.label, required this.createdAt});
+  Map<String, dynamic> toJson() => {'id': id, 'sched': scheduleId, 'day': day, 'kind': kind, 'value': value, 'label': label, 'at': createdAt.toIso8601String()};
+  factory TaskEvidence.fromJson(Map<String, dynamic> j) => TaskEvidence(
+      id: j['id'], scheduleId: j['sched'], day: j['day'], kind: j['kind'], value: j['value'], label: j['label'] ?? '', createdAt: DateTime.parse(j['at']));
 }

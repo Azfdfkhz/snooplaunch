@@ -62,6 +62,15 @@ class BackendService {
   /// ulang dengan id yang sama tidak membuat catatan ganda. Mengembalikan baris server.
   Future<Map<String, dynamic>> syncAttendance(Attendance a,
       {required bool queued, required int workStartMin, required int toleranceMin}) async {
+    if (a.status == AttendanceStatus.leave) {
+      return _rpc('snoop_record_leave', {
+        'p_id': a.id,
+        'p_type': a.leaveType ?? 'lainnya',
+        'p_note': a.note ?? '',
+        'p_device_time': a.checkInAt.toUtc().toIso8601String(),
+        'p_queued': queued,
+      });
+    }
     var row = await _rpc('snoop_check_in', {
       'p_id': a.id,
       'p_device_time': a.checkInAt.toUtc().toIso8601String(),

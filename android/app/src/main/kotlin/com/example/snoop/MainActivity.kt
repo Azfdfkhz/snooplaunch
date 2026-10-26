@@ -1,6 +1,8 @@
 package com.example.snoop
 
+import android.app.role.RoleManager
 import android.content.Intent
+import android.os.Build
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
@@ -14,6 +16,14 @@ import java.io.ByteArrayOutputStream
 class MainActivity : FlutterActivity() {
     private val channelName = "snoop/launcher"
     private var channel: MethodChannel? = null
+    private var pendingHomeResult: MethodChannel.Result? = null
+    private val homeRequestCode = 4242
+
+    private fun isHomeDefault(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+        val rm = getSystemService(RoleManager::class.java) ?: return false
+        return rm.isRoleHeld(RoleManager.ROLE_HOME)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -41,6 +51,27 @@ class MainActivity : FlutterActivity() {
                         startActivity(i)
                         result.success(true)
                     }
+                    "isHomeDefault" -> result.success(isHomeDefault())
+                    // Meminta peran Home langsung (dialog sistem "Jadikan default"). Hasil: "already" | "requested" | "fallback".
+                    "requestHome" -> {
+                        if (isHomeDefault()) {
+                            result.success("already")
+                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            val rm = getSystemService(RoleManager::class.java)
+                            if (rm != null && rm.isRoleAvailable(RoleManager.ROLE_HOME)) {
+                                pendingHomeResult?.success("requested")
+                                pendingHomeResult = result
+                                @Suppress("DEPRECATION")
+                                startActivityForResult(rm.createRequestRoleIntent(RoleManager.ROLE_HOME), homeRequestCode)
+                            } else {
+                                result.success("fallback")
+                                openHome()
+                            }
+                        } else {
+                            result.success("fallback")
+                            openHome()
+                        }
+                    }
                     "openHomeSettings" -> {
                         val i = Intent(Settings.ACTION_HOME_SETTINGS)
                         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -52,6 +83,23 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == homeRequestCode) {
+            pendingHomeResult?.success(if (isHomeDefault()) "granted" else "declined")
+            pendingHomeResult = null
+        }
+    }
+
+    private fun openHome() {
+        val i = Intent(Settings.ACTION_HOME_SETTINGS)
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try { startActivity(i) } catch (e: Exception) {
+            startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
     }
 
     // Tombol Home saat SNOOP sudah berjalan (launchMode singleTask): beri tahu Flutter agar kembali ke Home utama.

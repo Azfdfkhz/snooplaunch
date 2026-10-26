@@ -1,10 +1,12 @@
-
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
+import '../core/models.dart';
 
-/// Local reminders. Does not require network access; Android exact-alarm access
-/// is optional and the OS may defer notifications under battery restrictions.
+/// Pengingat lokal. Tidak memerlukan jaringan. Pengingat dapat:
+///  - sekali sehari, atau berulang tiap N menit dari jam awal sampai [untilMin] (jam pulang),
+///  - setiap hari, atau hanya Senin–Jumat.
+/// Setiap kombinasi (jam, hari) memakai ID notifikasi yang tetap, sehingga bisa dibatalkan dan diganti.
 class NotificationService {
   NotificationService._();
   static final NotificationService instance = NotificationService._();
@@ -14,8 +16,7 @@ class NotificationService {
   Future<void> initialize() async {
     if (_ready) return;
     tzdata.initializeTimeZones();
-    // SNOOP's default locale is Indonesia/WIB. Change this to the user's
-    // configured IANA timezone if the app later exposes timezone selection.
+    // Zona waktu default SNOOP adalah WIB (Asia/Jakarta).
     try { tz.setLocalLocation(tz.getLocation('Asia/Jakarta')); } catch (_) {}
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const settings = InitializationSettings(android: android);
@@ -38,12 +39,59 @@ class NotificationService {
     return hash == 0 ? 1 : hash;
   }
 
-  Future<void> scheduleDaily({required String id, required String title, required String body, required int minuteOfDay}) async {
+  /// Semua menit awal slot pengingat sampai [untilMin] (exclusive).
+  List<int> _slots(Reminder r, int untilMin) {
+    if (r.intervalMin <= 0) return [r.atMin];
+    final out = <int>[];
+    for (var t = r.atMin; t < untilMin && t < 24 * 60; t += r.intervalMin) {
+      out.add(t);
+    }
+    return out;
+  }
+
+  /// Menjadwalkan ulang pengingat. Pemanggil yang mengubah nilai pengingat harus memanggil
+  /// [cancelReminder] dengan nilai LAMA lebih dulu.
+  Future<void> scheduleReminder(Reminder r, {required int untilMin}) async {
     await initialize();
-    final notificationId = _stableId(id);
+    final body = 'Saatnya ${r.title.toLowerCase()}';
+    for (final t in _slots(r, untilMin)) {
+      if (r.workdaysOnly) {
+        for (var wd = DateTime.monday; wd <= DateTime.friday; wd++) {
+          await _schedule(key: '${r.id}|$t|$wd', title: r.title, body: body, minuteOfDay: t, weekday: wd);
+        }
+      } else {
+        await _schedule(key: '${r.id}|$t|0', title: r.title, body: body, minuteOfDay: t, weekday: null);
+      }
+    }
+  }
+
+  /// Membatalkan semua slot pengingat (mencakup seluruh hari, sehingga aman walau jam pulang berubah).
+  /// Daftar ID dihitung sinkron sebelum await pertama, sehingga aman dipanggil sebelum nilai berubah.
+  Future<void> cancelReminder(Reminder r) async {
+    // Hitung ID sebelum await pertama: pemanggil boleh mengubah nilai r setelah fungsi ini dipanggil.
+    final ids = <int>[];
+    for (final t in _slots(r, 24 * 60)) {
+      ids.add(_stableId('${r.id}|$t|0'));
+      for (var wd = DateTime.monday; wd <= DateTime.sunday; wd++) {
+        ids.add(_stableId('${r.id}|$t|$wd'));
+      }
+    }
+    await initialize();
+    for (final id in ids) {
+      await _plugin.cancel(id);
+    }
+  }
+
+  Future<void> _schedule({required String key, required String title, required String body, required int minuteOfDay, required int? weekday}) async {
     final now = tz.TZDateTime.now(tz.local);
-    var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, minuteOfDay ~/ 60, minuteOfDay % 60);
-    if (!scheduled.isAfter(now)) scheduled = scheduled.add(const Duration(days: 1));
+    var at = tz.TZDateTime(tz.local, now.year, now.month, now.day, minuteOfDay ~/ 60, minuteOfDay % 60);
+    if (weekday == null) {
+      if (!at.isAfter(now)) at = at.add(const Duration(days: 1));
+    } else {
+      while (at.weekday != weekday || !at.isAfter(now)) {
+        at = at.add(const Duration(days: 1));
+      }
+    }
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
         'snoop_reminders', 'Pengingat SNOOP',
@@ -52,16 +100,11 @@ class NotificationService {
       ),
     );
     await _plugin.zonedSchedule(
-      notificationId, title, body, scheduled, details,
+      _stableId(key), title, body, at, details,
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time,
+      matchDateTimeComponents: weekday == null ? DateTimeComponents.time : DateTimeComponents.dayOfWeekAndTime,
     );
-  }
-
-  Future<void> cancel(String id) async {
-    await initialize();
-    await _plugin.cancel(_stableId(id));
   }
 
   Future<void> cancelAll() async {

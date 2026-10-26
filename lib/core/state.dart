@@ -12,6 +12,7 @@ import '../services/capture_service.dart';
 import '../services/cloud_photo_service.dart';
 import '../services/notification_service.dart';
 import '../services/sync_service.dart';
+import '../services/task_evidence_store.dart';
 
 const _uuid = Uuid();
 
@@ -27,12 +28,20 @@ class AppState extends ChangeNotifier {
   String company = 'PT. Solusi Digital Indonesia';
   String period = '1 Jul 2025 – 31 Des 2025';
   int workStartMin = 8 * 60;
-  int workEndMin = 16 * 60;
+  int workEndMin = 17 * 60; // Senin–Jumat
+  int weekendEndMin = 16 * 60; // Sabtu & Minggu (asumsi: tetap 16:00, dapat diubah di Pengaturan)
+  int workEndFor(DateTime d) => d.weekday >= DateTime.saturday ? weekendEndMin : workEndMin;
+  /// Catatan mingguan. Kunci: tanggal Senin minggu tersebut (yyyy-mm-dd).
+  Map<String, String> weekNotes = {};
+  /// Versi skema data lokal. v2: jam pulang 17:00 Senin–Jumat, status jadwal per tanggal.
+  static const dataVersion = 3;
   int lateToleranceMin = 15;
   List<ScheduleItem> schedule = [];
   List<Reminder> reminders = [];
   List<Memory> memories = [];
   List<Attendance> attendance = [];
+  /// Bukti penyelesaian tugas (foto, dokumen, tautan) per kegiatan dan tanggal.
+  List<TaskEvidence> evidence = [];
   Set<String> favorites = {};
   /// Aplikasi di dock Home (urutan dipertahankan, maksimal [dockMax]).
   List<String> dock = [];
@@ -67,29 +76,55 @@ class AppState extends ChangeNotifier {
     period = _p!.getString('profile_period') ?? period;
     workStartMin = _p!.getInt('work_start') ?? workStartMin;
     workEndMin = _p!.getInt('work_end') ?? workEndMin;
+    weekendEndMin = _p!.getInt('weekend_end') ?? weekendEndMin;
     lateToleranceMin = _p!.getInt('late_tolerance') ?? lateToleranceMin;
     theme = _p!.getString('theme') ?? theme;
     schedule = readList('schedule', ScheduleItem.fromJson);
     reminders = readList('reminders', Reminder.fromJson);
     memories = readList('memories', Memory.fromJson);
     attendance = readList('attendance', Attendance.fromJson);
+    evidence = readList('evidence', TaskEvidence.fromJson);
     favorites = (_p!.getStringList('favorites') ?? []).toSet();
     dock = (_p!.getStringList('dock') ?? []).take(dockMax).toList();
     onboarded = _p!.getBool('onboarded') ?? false;
+    final wn = _p!.getString('week_notes');
+    if (wn != null) {
+      try { weekNotes = Map<String, String>.from(jsonDecode(wn) as Map); } catch (_) {}
+    }
+    // Migrasi data v1 -> v2: jam pulang lama 16:00 dipindah ke 17:00 (Senin–Jumat).
+    final version = _p!.getInt('data_version') ?? 1;
+    if (version < 2) {
+      if (workEndMin == 16 * 60) workEndMin = 17 * 60;
+      for (final it in schedule) {
+        if (it.title == 'Absen Pulang' && it.startMin == 16 * 60) it.startMin = 17 * 60;
+      }
+      for (final r in reminders) {
+        if (r.type == 'absen' && r.atMin == 16 * 60) {
+          r.atMin = 17 * 60;
+          r.workdaysOnly = true;
+          r.detail = r.summary;
+        }
+      }
+    }
+    // Migrasi v2 -> v3: kegiatan tidak lagi berulang setiap hari. Contoh bawaan dihapus;
+    // kegiatan lain dikunci ke tanggal pembuatannya (hari ini saat migrasi). Absen Masuk/Pulang tetap.
+    if (version < 3) {
+      schedule.removeWhere((it) => const ['s2', 's3', 's4'].contains(it.id));
+      for (final it in schedule) {
+        if (it.title != 'Absen Masuk' && it.title != 'Absen Pulang') it.date ??= dayKey(DateTime.now());
+      }
+    }
     if (schedule.isEmpty) {
       schedule = [
         ScheduleItem(id: 's1', title: 'Absen Masuk', place: 'Kantor', startMin: 8 * 60),
-        ScheduleItem(id: 's2', title: 'UI Design Development', place: 'Ruang Kreatif', startMin: 9 * 60, endMin: 11 * 60),
-        ScheduleItem(id: 's3', title: 'Istirahat Makan Siang', startMin: 12 * 60, endMin: 13 * 60),
-        ScheduleItem(id: 's4', title: 'Project Development', place: 'Ruang Meeting', startMin: 13 * 60, endMin: 15 * 60 + 30),
-        ScheduleItem(id: 's5', title: 'Absen Pulang', place: 'Kantor', startMin: 16 * 60),
+        ScheduleItem(id: 's5', title: 'Absen Pulang', place: 'Kantor', startMin: 17 * 60),
       ];
     }
     if (reminders.isEmpty) {
       reminders = [
-        Reminder(id: 'r1', title: 'Minum Air', detail: 'Setiap 2 jam', type: 'air', atMin: 10 * 60 + 30),
-        Reminder(id: 'r2', title: 'Istirahat', detail: 'Setiap 4 jam', type: 'istirahat', atMin: 12 * 60),
-        Reminder(id: 'r3', title: 'Absen Pulang', detail: 'Sesuai jadwal', type: 'absen', atMin: 16 * 60, enabled: false),
+        Reminder(id: 'r1', title: 'Minum Air', detail: 'Setiap 2 jam', type: 'air', atMin: 10 * 60 + 30, intervalMin: 120),
+        Reminder(id: 'r2', title: 'Istirahat', detail: 'Setiap 4 jam', type: 'istirahat', atMin: 12 * 60, intervalMin: 240),
+        Reminder(id: 'r3', title: 'Absen Pulang', detail: 'Senin–Jumat · sekali sehari', type: 'absen', atMin: 17 * 60, enabled: false, workdaysOnly: true),
         Reminder(id: 'r4', title: 'Dokumentasi Kegiatan', detail: 'Setiap selesai tugas', type: 'dokumentasi', atMin: 15 * 60),
       ];
     }
@@ -125,11 +160,8 @@ class AppState extends ChangeNotifier {
     try {
       await NotificationService.instance.initialize();
       for (final r in reminders) {
-        if (r.enabled) {
-          await NotificationService.instance.scheduleDaily(id: r.id, title: r.title, body: r.detail, minuteOfDay: r.atMin);
-        } else {
-          await NotificationService.instance.cancel(r.id);
-        }
+        await NotificationService.instance.cancelReminder(r);
+        if (r.enabled) await NotificationService.instance.scheduleReminder(r, untilMin: workEndMin);
       }
     } catch (_) {
       // Data lokal tetap berfungsi bila izin notifikasi tidak tersedia.
@@ -196,6 +228,7 @@ class AppState extends ChangeNotifier {
       'checked_out' => AttendanceStatus.checkedOut,
       'needs_attention' => AttendanceStatus.needsAttention,
       'pending' => AttendanceStatus.pending,
+      'leave' => AttendanceStatus.leave,
       _ => AttendanceStatus.present,
     };
     a.offlineTime = row['time_source'] == 'device_queued' || row['check_out_time_source'] == 'device_queued';
@@ -219,9 +252,13 @@ class AppState extends ChangeNotifier {
     await p.setString('reminders', jsonEncode(reminders.map((e) => e.toJson()).toList()));
     await p.setString('memories', jsonEncode(memories.map((e) => e.toJson()).toList()));
     await p.setString('attendance', jsonEncode(attendance.map((e) => e.toJson()).toList()));
+    await p.setString('evidence', jsonEncode(evidence.map((e) => e.toJson()).toList()));
     await p.setStringList('favorites', favorites.toList());
     await p.setStringList('dock', dock);
     await p.setBool('onboarded', onboarded);
+    await p.setString('week_notes', jsonEncode(weekNotes));
+    await p.setInt('weekend_end', weekendEndMin);
+    await p.setInt('data_version', dataVersion);
   }
 
   void changed() { notifyListeners(); _save(); }
@@ -237,6 +274,21 @@ class AppState extends ChangeNotifier {
 
   void setTheme(String value) { theme = value; changed(); }
 
+  void setWorkHours({int? weekdayEnd, int? weekendEnd}) {
+    if (weekdayEnd != null) workEndMin = weekdayEnd;
+    if (weekendEnd != null) weekendEndMin = weekendEnd;
+    changed();
+  }
+
+  Attendance? attendanceOn(DateTime d) {
+    final k = dayKey(d);
+    for (final a in attendance) { if (a.day == k) return a; }
+    return null;
+  }
+
+  /// Hari hadir (izin/sakit tidak dihitung sebagai kehadiran untuk streak dan minggu ini).
+  Set<String> get _presenceDays => {for (final a in attendance) if (a.status != AttendanceStatus.leave) a.day};
+
   Attendance? get today {
     final k = dayKey(DateTime.now());
     for (final a in attendance) { if (a.day == k) return a; }
@@ -247,13 +299,13 @@ class AppState extends ChangeNotifier {
   List<bool> get weekPresence {
     final now = DateTime.now();
     final monday = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
-    final days = attendance.map((a) => a.day).toSet();
+    final days = _presenceDays;
     return List.generate(7, (i) => days.contains(dayKey(monday.add(Duration(days: i)))));
   }
 
   /// Hari kerja beruntun dengan absensi. Akhir pekan tanpa absensi tidak memutus rangkaian.
   int get streak {
-    final days = attendance.map((a) => a.day).toSet();
+    final days = _presenceDays;
     var d = DateTime.now();
     if (!days.contains(dayKey(d))) d = d.subtract(const Duration(days: 1));
     var n = 0;
@@ -268,7 +320,50 @@ class AppState extends ChangeNotifier {
     return n;
   }
 
-  int get tasksDone => schedule.where((s) => s.status == ScheduleStatus.completed).length;
+  int tasksDoneOn(DateTime day) {
+    final now = DateTime.now();
+    return itemsOn(day).where((s) => s.statusOn(day, now) == ScheduleStatus.completed).length;
+  }
+
+  int get tasksDone => tasksDoneOn(DateTime.now());
+
+  /// Kegiatan yang berlaku pada tanggal tertentu: Absen Masuk/Pulang (tetap) + kegiatan untuk tanggal itu.
+  List<ScheduleItem> itemsOn(DateTime d) {
+    final k = dayKey(d);
+    return schedule.where((it) => it.date == null || it.date == k).toList()
+      ..sort((a, b) => a.startMin.compareTo(b.startMin));
+  }
+
+  List<TaskEvidence> evidenceFor(String scheduleId, DateTime day) =>
+      evidence.where((e) => e.scheduleId == scheduleId && e.day == dayKey(day)).toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+  void addEvidence(TaskEvidence e) {
+    evidence.add(e);
+    changed();
+  }
+
+  void removeEvidence(String id) {
+    final matches = evidence.where((e) => e.id == id).toList();
+    evidence.removeWhere((e) => e.id == id);
+    changed();
+    for (final e in matches) {
+      if (e.kind != 'link') TaskEvidenceStore.deleteFile(e.value);
+    }
+  }
+
+  /// Menghapus kegiatan satu tanggal beserta buktinya. Absen Masuk/Pulang tidak bisa dihapus.
+  void deleteSchedule(String id) {
+    final it = schedule.where((e) => e.id == id).firstOrNull;
+    if (it == null || it.date == null) return;
+    final ev = evidence.where((e) => e.scheduleId == id).toList();
+    evidence.removeWhere((e) => e.scheduleId == id);
+    schedule.removeWhere((e) => e.id == id);
+    changed();
+    for (final e in ev) {
+      if (e.kind != 'link') TaskEvidenceStore.deleteFile(e.value);
+    }
+  }
 
   AttendanceStatus get todayStatus => today?.status ?? AttendanceStatus.notCheckedIn;
 
@@ -298,6 +393,33 @@ class AppState extends ChangeNotifier {
     changed();
     sync.pushAttendance(t).catchError((_) {});
     return true;
+  }
+
+  /// Izin/sakit/lainnya sebagai pengganti absen masuk (tanpa foto). Satu catatan per hari.
+  bool recordLeave({required String type, String note = ''}) {
+    if (today != null) return false;
+    final now = DateTime.now();
+    final a = Attendance(
+      id: _uuid.v4(), day: dayKey(now), checkInAt: now, status: AttendanceStatus.leave,
+      leaveType: type, note: note.trim().isEmpty ? null : note.trim(),
+    );
+    attendance.add(a);
+    changed();
+    sync.pushAttendance(a).catchError((_) {});
+    return true;
+  }
+
+  DateTime _mondayOf(DateTime d) => DateTime(d.year, d.month, d.day).subtract(Duration(days: d.weekday - 1));
+  String weekNoteFor(DateTime d) => weekNotes[dayKey(_mondayOf(d))] ?? '';
+  void setWeekNote(DateTime d, String text) {
+    final k = dayKey(_mondayOf(d));
+    final t = text.trim();
+    if (t.isEmpty) {
+      weekNotes.remove(k);
+    } else {
+      weekNotes[k] = t;
+    }
+    changed();
   }
 
   // ---------------------------------------------------------------- Foto dokumentasi (Google Drive)
@@ -479,6 +601,16 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// Menghapus semua dokumentasi (cloud dan perangkat). Mengembalikan daftar pesan gagal (kosong = berhasil).
+  Future<List<String>> removeAllMemories() async {
+    final errors = <String>[];
+    for (final id in memories.map((m) => m.id).toList()) {
+      final err = await removeMemory(id);
+      if (err != null) errors.add(err);
+    }
+    return errors;
+  }
+
   /// Menghapus dokumentasi dari perangkat (tanpa menyentuh cloud). Gunakan [removeMemory] dari UI.
   void deleteMemory(String id) {
     final matches = memories.where((m) => m.id == id).toList();
@@ -496,20 +628,37 @@ class AppState extends ChangeNotifier {
     r.enabled = v;
     changed();
     if (v) {
-      NotificationService.instance.scheduleDaily(id: r.id, title: r.title, body: r.detail, minuteOfDay: r.atMin).catchError((_) {});
+      NotificationService.instance.scheduleReminder(r, untilMin: workEndMin).catchError((_) {});
     } else {
-      NotificationService.instance.cancel(r.id).catchError((_) {});
+      NotificationService.instance.cancelReminder(r).catchError((_) {});
     }
   }
+
   void addReminder(Reminder r) {
     reminders.add(r);
     changed();
-    if (r.enabled) NotificationService.instance.scheduleDaily(id: r.id, title: r.title, body: r.detail, minuteOfDay: r.atMin).catchError((_) {});
+    if (r.enabled) NotificationService.instance.scheduleReminder(r, untilMin: workEndMin).catchError((_) {});
   }
+
+  /// Mengubah pengingat. Jadwal notifikasi lama dibatalkan dulu, sebelum nilainya berubah.
+  void updateReminder(Reminder r, {required String title, required int atMin, required int intervalMin, required bool workdaysOnly}) {
+    NotificationService.instance.cancelReminder(r).catchError((_) {});
+    r.title = title;
+    r.atMin = atMin;
+    r.intervalMin = intervalMin;
+    r.workdaysOnly = workdaysOnly;
+    r.detail = r.summary;
+    changed();
+    if (r.enabled) NotificationService.instance.scheduleReminder(r, untilMin: workEndMin).catchError((_) {});
+  }
+
   void deleteReminder(String id) {
+    final matches = reminders.where((r) => r.id == id).toList();
     reminders.removeWhere((r) => r.id == id);
     changed();
-    NotificationService.instance.cancel(id).catchError((_) {});
+    for (final r in matches) {
+      NotificationService.instance.cancelReminder(r).catchError((_) {});
+    }
   }
 
   void addSchedule(ScheduleItem s) {
@@ -517,7 +666,8 @@ class AppState extends ChangeNotifier {
     schedule.sort((a, b) => a.startMin.compareTo(b.startMin));
     changed();
   }
-  void completeSchedule(ScheduleItem s) { s.status = ScheduleStatus.completed; changed(); }
+  /// Status kegiatan untuk satu tanggal. st = null mengembalikan ke status otomatis.
+  void setScheduleStatus(ScheduleItem s, DateTime day, ScheduleStatus? st) { s.setDayStatus(day, st); changed(); }
 
   void toggleFavorite(String pkg) {
     favorites.contains(pkg) ? favorites.remove(pkg) : favorites.add(pkg);
@@ -543,13 +693,13 @@ class AppState extends ChangeNotifier {
   /// Kegiatan yang sedang berlangsung, atau kegiatan terdekat berikutnya (null bila tidak ada).
   ScheduleItem? nextSchedule(DateTime now) {
     final n = now.hour * 60 + now.minute;
-    final sorted = [...schedule]..sort((a, b) => a.startMin.compareTo(b.startMin));
+    final sorted = itemsOn(now);
     // Kegiatan tanpa jam selesai dianggap berlangsung 30 menit saja (bukan sepanjang sisa hari).
     for (final it in sorted) {
       if (it.effective(now) == ScheduleStatus.inProgress && (it.endMin != null || n < it.startMin + 30)) return it;
     }
     for (final it in sorted) {
-      if (it.status == ScheduleStatus.upcoming && it.startMin >= n) return it;
+      if (it.statusOn(now, now) == ScheduleStatus.upcoming && it.startMin >= n) return it;
     }
     return null;
   }
@@ -559,7 +709,7 @@ class AppState extends ChangeNotifier {
     final n = now.hour * 60 + now.minute;
     ScheduleItem? best;
     var bestDiff = 1 << 30;
-    for (final s in schedule) {
+    for (final s in itemsOn(now)) {
       final end = s.endMin ?? s.startMin + 30;
       final diff = (n >= s.startMin && n <= end) ? 0 : (n < s.startMin ? s.startMin - n : n - end);
       if (diff < bestDiff && diff <= 60) { best = s; bestDiff = diff; }

@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
 /// Design tokens SNOOP. Semua warna, radius, dan spacing didefinisikan di sini
@@ -59,6 +60,11 @@ ThemeData snoopTheme({bool dark = false}) {
     useMaterial3: true,
     brightness: brightness,
     scaffoldBackgroundColor: C.bg,
+    // Transisi halaman bergaya iOS (geser dari kanan dengan parallax lembut) di semua platform.
+    pageTransitionsTheme: const PageTransitionsTheme(builders: {
+      TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+    }),
     colorScheme: scheme,
     textTheme: const TextTheme(
       headlineMedium: TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: C.text, letterSpacing: -0.5),

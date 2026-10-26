@@ -221,7 +221,8 @@ class CapsuleNav extends StatelessWidget {
     (Icons.home_rounded, 'Beranda'),
     (Icons.calendar_today_rounded, 'Jadwal'),
     (Icons.photo_library_outlined, 'Memories'),
-    (Icons.person_outline_rounded, 'Profil'),
+    (Icons.notifications_none_rounded, 'Pengingat'),
+    (Icons.settings_outlined, 'Pengaturan'),
   ];
   @override
   Widget build(BuildContext context) => SafeArea(
@@ -254,7 +255,7 @@ class CapsuleNav extends StatelessWidget {
                         child: Column(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(_items[i].$1, size: 21, color: i == index ? C.ink : C.onNight2),
                           const SizedBox(height: 2),
-                          Text(_items[i].$2, style: TextStyle(fontSize: 10.5, fontWeight: i == index ? FontWeight.w800 : FontWeight.w500, color: i == index ? C.ink : C.onNight2)),
+                          Text(_items[i].$2, maxLines: 1, overflow: TextOverflow.clip, style: TextStyle(fontSize: 10, letterSpacing: -0.2, fontWeight: i == index ? FontWeight.w800 : FontWeight.w500, color: i == index ? C.ink : C.onNight2)),
                         ]),
                       ),
                     ),

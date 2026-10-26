@@ -6,14 +6,14 @@ import '../services/launcher_service.dart';
 import 'app_drawer_screen.dart';
 import 'home_screen.dart';
 import 'memories_screen.dart';
-import 'profile_screen.dart';
+import 'reminders_screen.dart';
 import 'schedule_screen.dart';
+import 'settings_screen.dart';
 
-/// Root launcher: dua halaman horizontal.
-///   halaman 0 = App Drawer
-///   halaman 1 = Home (awal)
-/// App Drawer dapat dibuka dengan: swipe ke kanan dari Home, tombol di dock, atau swipe ke atas pada dock.
-/// Swipe horizontal hanya aktif saat tab Beranda terlihat supaya tidak bentrok dengan gesture di tab lain.
+/// Root launcher: satu rangkaian halaman horizontal, digeser kiri/kanan (gaya iOS):
+///   0 App Drawer | 1 Beranda | 2 Jadwal | 3 Memories | 4 Pengingat | 5 Pengaturan
+/// Geser ke kiri dari Beranda membuka Jadwal, dan seterusnya. Navbar kapsul hanya tampil di halaman 2–5.
+/// Tombol kembali: halaman lain -> Beranda; di Beranda tidak keluar (launcher tidak boleh tertutup).
 class Shell extends StatefulWidget {
   const Shell({super.key});
   @override
@@ -23,20 +23,17 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> with WidgetsBindingObserver {
   static const _drawerPage = 0;
   static const _homePage = 1;
+  static const _lastPage = 5;
   final _pages = PageController(initialPage: _homePage);
-  int _tab = 0;
   int _page = _homePage;
-  final Set<int> _visited = {0}; // tab dibangun saat pertama dikunjungi (hemat memori/CPU saat start)
-
-  void _setTab(int i) => setState(() { _tab = i; _visited.add(i); });
+  // Halaman dibangun saat pertama dikunjungi (hemat memori/CPU saat start).
+  final Set<int> _visited = {_homePage};
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Hangatkan cache aplikasi sekali supaya dock, favorit, dan App Drawer terisi instan.
     LauncherService.apps();
-    // Tombol Home saat SNOOP sudah berjalan: tutup halaman yang terbuka dan kembali ke Home utama.
     LauncherService.setHomeHandler(_goHome);
   }
 
@@ -50,16 +47,17 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Setelah kembali dari aplikasi lain, aplikasi mungkin baru dipasang/dihapus.
     if (state == AppLifecycleState.resumed && LauncherService.stale) LauncherService.apps(force: true);
   }
 
   void _goTo(int page) {
     if (!_pages.hasClients) return;
+    final target = page < _drawerPage ? _drawerPage : (page > _lastPage ? _lastPage : page);
+    setState(() => _visited.add(target));
     if (MediaQuery.disableAnimationsOf(context)) {
-      _pages.jumpToPage(page);
+      _pages.jumpToPage(target);
     } else {
-      _pages.animateToPage(page, duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic);
+      _pages.animateToPage(target, duration: const Duration(milliseconds: 380), curve: Curves.easeInOutCubic);
     }
   }
 
@@ -67,57 +65,59 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
     if (!mounted) return;
     Navigator.of(context).popUntil((r) => r.isFirst);
     FocusManager.instance.primaryFocus?.unfocus();
-    if (_tab != 0) _setTab(0);
-    if (_page != _homePage) _goTo(_homePage);
+    _goTo(_homePage);
   }
 
   SystemUiOverlayStyle get _overlay {
-    // Home: ikon status gelap di atas panel kuning. Drawer: latar gelap. Tab lain: latar ivory.
-    final dark = _tab == 0; // Home & Drawer memakai latar gelap di bawah
-    final drawer = _page == _drawerPage && _tab == 0;
+    final drawer = _page == _drawerPage;
+    final night = _page <= _homePage; // Drawer & Beranda memakai latar gelap
     return SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: drawer ? Brightness.light : Brightness.dark,
       statusBarBrightness: drawer ? Brightness.dark : Brightness.light,
-      systemNavigationBarColor: dark ? C.night : C.bg,
-      systemNavigationBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+      systemNavigationBarColor: night ? C.night : C.bg,
+      systemNavigationBarIconBrightness: night ? Brightness.light : Brightness.dark,
       systemNavigationBarDividerColor: Colors.transparent,
     );
   }
 
+  Widget _tab(int page, Widget child) => SafeArea(
+        bottom: false,
+        child: _visited.contains(page) ? child : const SizedBox.shrink(),
+      );
+
   @override
-  Widget build(BuildContext context) => AnnotatedRegion<SystemUiOverlayStyle>(
-        value: _overlay,
-        child: PopScope(
-          // Tombol kembali: Drawer -> Home, tab lain -> Beranda; di Home tidak keluar (launcher tidak boleh tertutup).
-          canPop: false,
-          onPopInvokedWithResult: (didPop, _) {
-            if (didPop) return;
-            if (_page == _drawerPage) {
-              _goTo(_homePage);
-            } else if (_tab != 0) {
-              _setTab(0);
-            }
-          },
-          child: PageView(
+  Widget build(BuildContext context) {
+    final onTabs = _page > _homePage;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: _overlay,
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          if (_page != _homePage) _goTo(_homePage);
+        },
+        child: Scaffold(
+          backgroundColor: _page <= _homePage ? C.night : C.bg,
+          body: PageView(
             controller: _pages,
-            physics: _tab == 0 ? const PageScrollPhysics() : const NeverScrollableScrollPhysics(),
-            onPageChanged: (i) => setState(() => _page = i),
+            physics: const PageScrollPhysics(parent: BouncingScrollPhysics()),
+            onPageChanged: (i) => setState(() {
+              _page = i;
+              _visited.add(i);
+            }),
             children: [
               AppDrawerScreen(active: _page == _drawerPage, onClose: () => _goTo(_homePage)),
-              Scaffold(
-                backgroundColor: _tab == 0 ? C.night : C.bg,
-                // Home mengatur area aman sendiri (panel kuning menembus status bar).
-                body: IndexedStack(index: _tab, children: [
-                  HomeScreen(onGoTo: _setTab, onOpenDrawer: () => _goTo(_drawerPage)),
-                  SafeArea(bottom: false, child: _visited.contains(1) ? const ScheduleScreen() : const SizedBox.shrink()),
-                  SafeArea(bottom: false, child: _visited.contains(2) ? const MemoriesScreen() : const SizedBox.shrink()),
-                  SafeArea(bottom: false, child: _visited.contains(3) ? const ProfileScreen() : const SizedBox.shrink()),
-                ]),
-                bottomNavigationBar: _tab == 0 ? null : CapsuleNav(index: _tab, onTap: _setTab),
-              ),
+              HomeScreen(onGoTo: _goTo, onOpenDrawer: () => _goTo(_drawerPage)),
+              _tab(2, const ScheduleScreen()),
+              _tab(3, const MemoriesScreen()),
+              _tab(4, const RemindersView()),
+              _tab(5, const SettingsView()),
             ],
           ),
+          bottomNavigationBar: onTabs ? CapsuleNav(index: _page - 1, onTap: (i) => _goTo(i + 1)) : null,
         ),
-      );
+      ),
+    );
+  }
 }

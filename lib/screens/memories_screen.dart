@@ -94,7 +94,7 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
     final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
       title: const Text('Hapus dokumentasi?'),
       content: Text(cloud
-          ? 'Foto di Google Drive, catatan, dan cache foto akan dihapus. Tindakan ini tidak dapat dibatalkan.'
+          ? 'Foto dipindahkan ke Sampah Google Drive dan bisa dipulihkan dalam 30 hari. Catatan dan cache foto di SNOOP juga akan dihapus.'
           : 'Catatan dan foto di perangkat akan dihapus.'),
       actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Hapus'))]));
     if (ok != true || !mounted) return;
@@ -122,7 +122,7 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
     final s = AppScope.of(context);
     final m = s.memoryById(widget.id);
     if (m == null) return Scaffold(appBar: AppBar(), body: const Center(child: Text('Dokumentasi tidak ditemukan.')));
-    final sched = s.schedule.where((e) => e.id == m.scheduleId).firstOrNull;
+    final sched = s.schedule.where((e) => e.id == m.scheduleId).firstOrNull; // kegiatan bisa berbeda per tanggal; tautan tetap berlaku
     final st = photoStatusOf(m);
     Widget row(IconData i, String k, String v) => Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Icon(i, size: 18, color: C.text2), const SizedBox(width: 12),

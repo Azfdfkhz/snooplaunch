@@ -11,8 +11,6 @@ import '../services/launcher_service.dart';
 import 'auth_screen.dart';
 import 'checkin_screen.dart';
 import 'memories_screen.dart';
-import 'reminders_screen.dart';
-import 'settings_screen.dart';
 
 /// Home launcher (Update 1.0.0). Urutan konten:
 /// panel organik (identitas, jam, tanggal) -> widget absensi -> jadwal + memories -> pengingat
@@ -42,7 +40,7 @@ class _HomeScreenState extends State<HomeScreen> {
       Padding(
         padding: const EdgeInsets.fromLTRB(S.x4, S.x2, S.x4, S.x4),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _attendanceWidget(context, s),
+          _Tick(builder: (ctx, now) => _attendanceWidget(ctx, s)),
           ..._serverAlert(context, s),
           const SizedBox(height: S.x3),
           _Tick(builder: (ctx, now) => _scheduleAndMemories(ctx, s, now)),
@@ -96,7 +94,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   shape: const CircleBorder(),
                   child: InkWell(
                     customBorder: const CircleBorder(),
-                    onTap: () => widget.onGoTo(3),
+                    onTap: () => widget.onGoTo(5),
                     child: const SizedBox(width: 48, height: 48, child: Icon(Icons.person_rounded, color: Colors.white, size: 24)),
                   ),
                 ),
@@ -131,14 +129,17 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _attendanceWidget(BuildContext context, AppState s) {
     final now = DateTime.now();
     final att = s.today;
-    final canOut = att != null && att.checkOutAt == null;
+    final canOut = att != null && att.checkOutAt == null && att.status != AttendanceStatus.leave;
     final done = att?.checkOutAt != null;
     final deviceTime = att?.offlineTime == true ? ' · jam perangkat' : '';
 
     // Satu chip status absensi. Data yang baru tersimpan di perangkat TIDAK ditampilkan sebagai berhasil;
     // status koneksi server dibahas terpisah di kartu peringatan di bawah.
+    final leave = att?.status == AttendanceStatus.leave;
     final (String chipText, Color chipBg, Color chipFg, IconData chipIcon) = att == null
         ? ('Belum absen', C.warningSoft, C.warning, Icons.schedule_rounded)
+        : att.status == AttendanceStatus.leave
+            ? ('${leaveLabel(att.leaveType)} hari ini', C.accentSoft, C.ink, Icons.event_busy_rounded)
         : !att.synced
             ? ('${done ? 'Pulang' : 'Masuk'} ${hm(att.checkOutAt ?? att.checkInAt)} · belum di server', C.accentSoft, C.ink, Icons.hourglass_top_rounded)
             : switch (s.todayStatus) {
@@ -149,7 +150,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 _ => ('Hadir ${hm(att.checkInAt)}$deviceTime', C.successSoft, C.success, Icons.check_circle_rounded),
               };
 
-    final actionLabel = done ? 'Absensi selesai' : (canOut ? 'Absen pulang' : 'Absen masuk');
+    // Jendela waktu: absen masuk dibuka 06:00; absen pulang dibuka pada jam pulang hari itu (17:00 Senin–Jumat).
+    final nowMin = now.hour * 60 + now.minute;
+    final String? waitMsg = (att == null && nowMin < 6 * 60)
+        ? 'Absen masuk dibuka pukul 06:00'
+        : (canOut && nowMin < s.workEndFor(now))
+            ? 'Absen pulang dibuka pukul ${minToHm(s.workEndFor(now))}'
+            : null;
+    final actionLabel = done ? 'Absensi selesai' : (leave ? 'Izin tercatat' : (canOut ? 'Absen pulang' : 'Absen masuk'));
     void open() => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CheckInScreen(isOut: canOut)));
 
     return Container(
@@ -158,7 +166,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('Absensi hari ini', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.onNight, letterSpacing: -.2)),
         const SizedBox(height: S.x1),
-        Text('Jam kerja ${minToHm(s.workStartMin)} – ${minToHm(s.workEndMin)}', style: const TextStyle(fontSize: 13, color: C.onNight2)),
+        Text('Jam kerja ${minToHm(s.workStartMin)} – ${minToHm(s.workEndFor(now))}', style: const TextStyle(fontSize: 13, color: C.onNight2)),
         const SizedBox(height: S.x3),
         Wrap(spacing: S.x3, runSpacing: S.x2, crossAxisAlignment: WrapCrossAlignment.center, children: [
           StatusChip(chipText, bg: chipBg, fg: chipFg, icon: chipIcon),
@@ -175,11 +183,22 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: S.x4),
         _WeekRow(marks: _weekMarks(s, now), todayIndex: now.weekday - 1),
         const SizedBox(height: S.x4),
+        if (waitMsg != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: S.x4, vertical: S.x3),
+            decoration: BoxDecoration(color: C.nightSurface, borderRadius: BorderRadius.circular(R.small)),
+            child: Row(children: [
+              const Icon(Icons.schedule_rounded, size: 18, color: C.accent),
+              const SizedBox(width: S.x2),
+              Expanded(child: Text(waitMsg, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: C.onNight))),
+            ]),
+          ),
+        if (waitMsg == null)
         SizedBox(
           height: 52,
           child: FilledButton.icon(
-            onPressed: done ? null : open,
-            icon: Icon(done ? Icons.check_rounded : Icons.photo_camera_outlined, size: 20),
+            onPressed: (done || leave) ? null : (att == null ? () { _startAttendance(context, s); } : open),
+            icon: Icon(done ? Icons.check_rounded : (leave ? Icons.event_busy_rounded : Icons.photo_camera_outlined), size: 20),
             label: Text(actionLabel, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
             style: FilledButton.styleFrom(
               backgroundColor: C.accent,
@@ -194,6 +213,56 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// Absen masuk: pilih hadir (foto) atau izin/sakit/lainnya (tanpa foto).
+  Future<void> _startAttendance(BuildContext context, AppState s) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const ListTile(title: Text('Catat kehadiran hari ini', style: TextStyle(fontWeight: FontWeight.w800))),
+          ListTile(leading: const Icon(Icons.photo_camera_outlined), title: const Text('Hadir · ambil foto'), onTap: () => Navigator.pop(ctx, 'hadir')),
+          ListTile(leading: const Icon(Icons.event_busy_outlined), title: const Text('Izin'), onTap: () => Navigator.pop(ctx, 'izin')),
+          ListTile(leading: const Icon(Icons.medical_services_outlined), title: const Text('Sakit'), onTap: () => Navigator.pop(ctx, 'sakit')),
+          ListTile(leading: const Icon(Icons.more_horiz_rounded), title: const Text('Lainnya'), onTap: () => Navigator.pop(ctx, 'lainnya')),
+        ]),
+      ),
+    );
+    if (choice == null || !context.mounted) return;
+    if (choice == 'hadir') {
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CheckInScreen(isOut: false)));
+      return;
+    }
+    final note = await _leaveNote(context, leaveLabel(choice));
+    if (note == null || !context.mounted) return;
+    final ok = s.recordLeave(type: choice, note: note);
+    if (!ok) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('Absensi hari ini sudah tercatat.')));
+    }
+  }
+
+  /// Dialog keterangan izin. Mengembalikan null bila dibatalkan.
+  Future<String?> _leaveNote(BuildContext context, String label) async {
+    final ctrl = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('$label hari ini'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLength: 200,
+          decoration: const InputDecoration(labelText: 'Keterangan (opsional)', hintText: 'Contoh: demam, urusan keluarga'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Simpan')),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    return result;
+  }
+
   /// Status tiap hari minggu ini dari data absensi aktual (bukan sekadar ada/tidak ada).
   List<_DayMark> _weekMarks(AppState s, DateTime now) {
     final monday = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
@@ -203,6 +272,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final a = byDay[dayKey(d)];
       if (a != null) {
         if (!a.synced) return _DayMark.pending;
+        if (a.status == AttendanceStatus.leave) return _DayMark.leave;
         return a.status == AttendanceStatus.late ? _DayMark.late : _DayMark.present;
       }
       if (i > now.weekday - 1) return _DayMark.future;
@@ -226,7 +296,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _scheduleWidget(AppState s, DateTime now) {
     final next = s.nextSchedule(now);
     final live = next != null && next.effective(now) == ScheduleStatus.inProgress && next.startMin <= now.hour * 60 + now.minute;
-    final total = s.schedule.length;
+    final total = s.itemsOn(now).length;
     final label = next == null
         ? (total == 0 ? 'Jadwal: belum ada jadwal hari ini' : 'Jadwal: tidak ada kegiatan berikutnya')
         : 'Jadwal: ${live ? 'berlangsung' : 'berikutnya'}, ${next.title}, pukul ${next.timeLabel}';
@@ -240,7 +310,7 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(R.widget),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () => widget.onGoTo(1),
+          onTap: () => widget.onGoTo(2),
           child: Padding(
             padding: const EdgeInsets.all(S.x4),
             child: next == null
@@ -285,7 +355,7 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(R.widget),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () => m == null ? widget.onGoTo(2) : Navigator.of(context).push(MaterialPageRoute(builder: (_) => MemoryDetailScreen(id: m.id))),
+          onTap: () => m == null ? widget.onGoTo(3) : Navigator.of(context).push(MaterialPageRoute(builder: (_) => MemoryDetailScreen(id: m.id))),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Expanded(
               child: m != null
@@ -316,7 +386,7 @@ class _HomeScreenState extends State<HomeScreen> {
       icon: _reminderIcon(r?.type),
       text: r == null ? 'Tidak ada pengingat tersisa hari ini' : 'Berikutnya: ${r.title} · ${minToHm(r.atMin)}',
       semantics: r == null ? 'Pengingat: tidak ada yang tersisa hari ini' : 'Pengingat berikutnya: ${r.title}, pukul ${minToHm(r.atMin)}',
-      onTap: () => _push(const RemindersScreen()),
+      onTap: () => widget.onGoTo(4),
       compact: true,
     );
   }
@@ -335,7 +405,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ? 'Absensi hari ini baru tersimpan di perangkat. Guru belum bisa melihatnya dan foto tidak dapat diunggah ke Google Drive.'
           : 'Absensi hanya akan tersimpan di perangkat dan foto tidak dapat diunggah ke Google Drive.';
       action = 'Lihat panduan';
-      onAction = () => _push(const SettingsScreen());
+      onAction = () => widget.onGoTo(5);
     } else if (!s.signedIn) {
       title = 'Belum masuk akun';
       body = att != null
@@ -365,10 +435,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _shortcuts(BuildContext context) {
     final items = <(IconData, String, VoidCallback)>[
-      (Icons.calendar_today_rounded, 'Jadwal', () => widget.onGoTo(1)),
-      (Icons.photo_library_outlined, 'Memories', () => widget.onGoTo(2)),
-      (Icons.notifications_none_rounded, 'Pengingat', () => _push(const RemindersScreen())),
-      (Icons.settings_outlined, 'Pengaturan', () => _push(const SettingsScreen())),
+      (Icons.calendar_today_rounded, 'Jadwal', () => widget.onGoTo(2)),
+      (Icons.photo_library_outlined, 'Memories', () => widget.onGoTo(3)),
+      (Icons.notifications_none_rounded, 'Pengingat', () => widget.onGoTo(4)),
+      (Icons.settings_outlined, 'Pengaturan', () => widget.onGoTo(5)),
     ];
     return Row(children: [
       for (final it in items)
@@ -578,7 +648,7 @@ class _Pill extends StatelessWidget {
       );
 }
 
-enum _DayMark { present, late, pending, missed, today, future, off }
+enum _DayMark { present, late, pending, missed, today, future, off, leave }
 
 class _WeekRow extends StatelessWidget {
   final List<_DayMark> marks;
@@ -593,6 +663,7 @@ class _WeekRow extends StatelessWidget {
         _DayMark.today => 'belum absen',
         _DayMark.future => 'belum tiba',
         _DayMark.off => 'akhir pekan',
+        _DayMark.leave => 'izin atau sakit',
       };
 
   @override
@@ -624,6 +695,7 @@ class _WeekRow extends StatelessWidget {
       _DayMark.today => circle(border: C.onNight, bw: 2),
       _DayMark.future => circle(border: C.onNight2.withValues(alpha: .25)),
       _DayMark.off => circle(border: C.onNight2.withValues(alpha: .25)),
+      _DayMark.leave => circle(fill: C.accentSoft, icon: Icons.event_busy_rounded, iconColor: C.ink),
     };
   }
 }

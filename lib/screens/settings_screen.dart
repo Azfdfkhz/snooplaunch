@@ -8,9 +8,23 @@ import '../services/launcher_service.dart';
 import '../services/notification_service.dart';
 import 'auth_screen.dart';
 import 'reminders_screen.dart';
+import '../core/models.dart';
+import '../core/state.dart';
 
+/// Pembungkus untuk dibuka dengan AppBar.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Pengaturan'), backgroundColor: Colors.transparent),
+        body: const SettingsView(showTitle: false),
+      );
+}
+
+/// Isi halaman Pengaturan (juga halaman geser). Profil ada di bagian atas (menggantikan halaman Profil).
+class SettingsView extends StatelessWidget {
+  final bool showTitle;
+  const SettingsView({super.key, this.showTitle = true});
 
   Future<void> _editProfile(BuildContext context) async {
     final s = AppScope.of(context);
@@ -50,6 +64,79 @@ class SettingsScreen extends StatelessWidget {
     if (selected != null) s.setTheme(selected);
   }
 
+  /// Jam pulang. Senin–Jumat dan Sabtu–Minggu diatur terpisah.
+  Future<void> _pickWorkEnd(BuildContext context, {required bool weekend}) async {
+    final s = AppScope.of(context);
+    final cur = weekend ? s.weekendEndMin : s.workEndMin;
+    final t = await showTimePicker(context: context, initialTime: TimeOfDay(hour: cur ~/ 60, minute: cur % 60));
+    if (t == null) return;
+    final m = t.hour * 60 + t.minute;
+    if (weekend) {
+      s.setWorkHours(weekendEnd: m);
+    } else {
+      s.setWorkHours(weekdayEnd: m);
+    }
+  }
+
+  Future<void> _deleteAllMemories(BuildContext context) async {
+    final s = AppScope.of(context);
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Hapus semua dokumentasi?'),
+      content: const Text('Semua foto dipindahkan ke Sampah Google Drive (bisa dipulihkan dalam 30 hari) dan dihapus dari SNOOP. '
+          'Lakukan ini sebelum menghapus aplikasi jika foto juga ingin dihapus dari Drive, karena menghapus aplikasi tidak bisa menghapus file di Drive.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Hapus semua')),
+      ],
+    ));
+    if (ok != true || !context.mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final errors = await s.removeAllMemories();
+    messenger?.showSnackBar(SnackBar(content: Text(errors.isEmpty
+        ? 'Semua dokumentasi dihapus.'
+        : '${errors.length} dokumentasi belum terhapus. Coba lagi saat online.')));
+  }
+
+  /// Meminta SNOOP sebagai launcher default. Di Android 10+ muncul dialog sistem "Jadikan default".
+  Future<void> _makeDefault(BuildContext context) async {
+    final r = await LauncherService.requestHome();
+    if (!context.mounted) return;
+    final msg = switch (r) {
+      'already' => 'SNOOP sudah menjadi launcher default.',
+      'granted' => 'SNOOP sekarang launcher default.',
+      'declined' => 'Launcher default belum diubah.',
+      'requested' => 'Permintaan sebelumnya masih berjalan.',
+      _ => 'Pilih SNOOP di pengaturan Aplikasi Home.',
+    };
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Widget _profileCard(BuildContext context, AppState s) {
+    Widget info(IconData i, String t) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(children: [Icon(i, size: 16, color: C.text2), const SizedBox(width: 10), Expanded(child: Text(t, style: const TextStyle(fontSize: 13)))]),
+        );
+    return SnoopCard(
+      padding: const EdgeInsets.all(S.x4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Mascot(size: 56),
+          const SizedBox(width: S.x3),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(s.fullName, style: Theme.of(context).textTheme.titleMedium),
+            Text('Siswa • PKL', style: Theme.of(context).textTheme.bodySmall),
+          ])),
+        ]),
+        const SizedBox(height: S.x3),
+        info(Icons.school_outlined, s.school),
+        info(Icons.business_outlined, s.company),
+        info(Icons.date_range_outlined, 'Periode ${s.period}'),
+        const SizedBox(height: S.x2),
+        PillButton(dark: false, icon: Icons.edit_outlined, label: 'Edit profil', onPressed: () => _editProfile(context)),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
@@ -58,42 +145,45 @@ class SettingsScreen extends StatelessWidget {
       onTap: onTap ?? () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Fitur ini belum tersedia.'))),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       child: Row(children: [Icon(i, size: 20), const SizedBox(width: 12), Expanded(child: Text(t)), if (trailing != null) Text(trailing, style: Theme.of(context).textTheme.bodySmall), const SizedBox(width: 4), const Icon(Icons.chevron_right, size: 18, color: C.text2)])));
-    return Scaffold(
-      appBar: AppBar(title: const Text('Pengaturan'), backgroundColor: Colors.transparent),
-      body: ListView(padding: const EdgeInsets.all(16), children: [
-        group('Akun'),
-        row(Icons.person_outline, 'Edit Profil', onTap: () => _editProfile(context)),
-        row(Icons.cloud_outlined, 'Akun cloud',
-            trailing: s.signedIn ? (s.userEmail ?? 'Masuk') : 'Belum masuk',
-            onTap: () => s.signedIn ? null : Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen()))),
-        group('Notifikasi'),
-        row(Icons.notifications_none, 'Pengingat', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RemindersScreen()))),
-        row(Icons.notifications_active_outlined, 'Uji Notifikasi', onTap: () async {
-          try {
-            await NotificationService.instance.showTest();
-            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Permintaan notifikasi dikirim. Periksa izin notifikasi perangkat.')));
-          } catch (_) {
-            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Notifikasi belum dapat dijadwalkan di perangkat ini.')));
-          }
-        }),
-        group('Perangkat'),
-        row(Icons.home_outlined, 'Launcher Default', onTap: LauncherService.openHomeSettings),
-        group('Tampilan'),
-        row(Icons.brightness_6_outlined, 'Tema', trailing: s.theme, onTap: () => _chooseTheme(context)),
-        group('Sinkronisasi'),
-        _SyncCard(),
-        const SizedBox(height: 16),
-        if (s.signedIn)
-          PillButton(label: 'Keluar dari akun cloud', dark: false, onPressed: () => showDialog(context: context, builder: (ctx) => AlertDialog(
-            title: const Text('Keluar?'), content: const Text('Data lokal tetap ada. Absensi baru akan antre sampai Anda masuk lagi.'),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
-              FilledButton(onPressed: () { Navigator.pop(ctx); s.signOut(); }, child: const Text('Keluar')),
-            ])))
-        else
-          PillButton(label: 'Masuk / daftar', onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen()))),
-      ]),
-    );
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 96), children: [
+      if (showTitle) const Padding(padding: EdgeInsets.only(bottom: S.x2), child: PageTitle('Pengaturan', icon: Icons.settings_outlined)),
+      _profileCard(context, s),
+      group('Jam kerja'),
+      row(Icons.schedule, 'Jam pulang Senin–Jumat', trailing: minToHm(s.workEndMin), onTap: () => _pickWorkEnd(context, weekend: false)),
+      row(Icons.weekend_outlined, 'Jam pulang Sabtu–Minggu', trailing: minToHm(s.weekendEndMin), onTap: () => _pickWorkEnd(context, weekend: true)),
+      group('Akun'),
+      row(Icons.cloud_outlined, 'Akun cloud',
+          trailing: s.signedIn ? (s.userEmail ?? 'Masuk') : 'Belum masuk',
+          onTap: () => s.signedIn ? null : Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen()))),
+      group('Notifikasi'),
+      row(Icons.notifications_none, 'Pengingat', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RemindersScreen()))),
+      row(Icons.notifications_active_outlined, 'Uji Notifikasi', onTap: () async {
+        try {
+          await NotificationService.instance.showTest();
+          if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Permintaan notifikasi dikirim. Periksa izin notifikasi perangkat.')));
+        } catch (_) {
+          if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Notifikasi belum dapat dijadwalkan di perangkat ini.')));
+        }
+      }),
+      group('Perangkat'),
+      row(Icons.home_outlined, 'Jadikan launcher default', onTap: () => _makeDefault(context)),
+      group('Tampilan'),
+      row(Icons.brightness_6_outlined, 'Tema', trailing: s.theme, onTap: () => _chooseTheme(context)),
+      group('Sinkronisasi'),
+      _SyncCard(),
+      group('Data'),
+      row(Icons.delete_sweep_outlined, 'Hapus semua dokumentasi', onTap: () => _deleteAllMemories(context)),
+      const SizedBox(height: 16),
+      if (s.signedIn)
+        PillButton(label: 'Keluar dari akun cloud', dark: false, onPressed: () => showDialog(context: context, builder: (ctx) => AlertDialog(
+          title: const Text('Keluar?'), content: const Text('Data lokal tetap ada. Absensi baru akan antre sampai Anda masuk lagi.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+            FilledButton(onPressed: () { Navigator.pop(ctx); s.signOut(); }, child: const Text('Keluar')),
+          ])))
+      else
+        PillButton(label: 'Masuk / daftar', onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen()))),
+    ]);
   }
 }
 

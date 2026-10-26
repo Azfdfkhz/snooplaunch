@@ -115,7 +115,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
             const SizedBox(height: S.x4),
             Wrap(spacing: S.x2, runSpacing: S.x2, children: [
               StatusChip('Absen $kind', bg: C.accentSoft, fg: C.ink, icon: widget.isOut ? Icons.logout_rounded : Icons.login_rounded),
-              StatusChip('Jadwal ${minToHm(widget.isOut ? s.workEndMin : s.workStartMin)}', bg: C.soft, fg: C.text, icon: Icons.event_outlined),
+              StatusChip('Jadwal ${minToHm(widget.isOut ? s.workEndFor(DateTime.now()) : s.workStartMin)}', bg: C.soft, fg: C.text, icon: Icons.event_outlined),
             ]),
             const SizedBox(height: S.x3),
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

@@ -44,12 +44,18 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
 
-            <!-- Intent untuk menjadi home launcher default (FR-11) -->
+            <!-- Kandidat launcher default (HOME). Tidak boleh memakai <data>: intent HOME tidak membawa data,
+                 sehingga filter dengan <data> tidak pernah cocok dan SNOOP tidak muncul di daftar launcher. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.HOME"/>
                 <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+
+            <!-- Callback login Supabase (deep link). Terpisah dari filter HOME. -->
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="com.snoop.snoop" android:host="login-callback" />
             </intent-filter>

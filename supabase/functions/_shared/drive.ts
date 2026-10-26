@@ -76,12 +76,15 @@ export async function findByMemory(token: string, memoryId: string): Promise<Dri
   return ((await res.json()).files ?? []) as DriveFile[];
 }
 
+/** Memindahkan file ke Sampah Google Drive (bisa dipulihkan ±30 hari), bukan hapus permanen. Idempoten. */
 export async function deleteFile(token: string, id: string): Promise<void> {
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}`, {
-    method: "DELETE", headers: { Authorization: `Bearer ${token}` },
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=id,trashed`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ trashed: true }),
   });
-  if (res.status === 404) return; // idempoten: sudah tidak ada
-  if (!res.ok) throw new HttpError(502, "drive_error", `delete:${res.status}`);
+  if (res.status === 404) return; // sudah tidak ada
+  if (!res.ok) throw new HttpError(502, "drive_error", `trash:${res.status}`);
 }
 
 /** File Drive harus ada, tidak di tempat sampah, dan ditandai milik pengguna + dokumentasi yang sama. */
