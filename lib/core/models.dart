@@ -46,6 +46,8 @@ class Memory {
   String? scheduleId;
   String? photoPath;
   DateTime capturedAt;
+  /// Waktu foto diterima aplikasi dari kamera (dipisah dari waktu absen dicatat).
+  DateTime? takenAt;
   double? lat;
   double? lng;
   double? accuracy;
@@ -53,14 +55,15 @@ class Memory {
   String description;
   UploadStatus upload;
   String? driveUrl;
-  Memory({required this.id, required this.title, this.scheduleId, this.photoPath, required this.capturedAt, this.lat, this.lng, this.accuracy, this.placeName, this.description = '', this.upload = UploadStatus.pending, this.driveUrl});
+  Memory({required this.id, required this.title, this.scheduleId, this.photoPath, required this.capturedAt, this.takenAt, this.lat, this.lng, this.accuracy, this.placeName, this.description = '', this.upload = UploadStatus.pending, this.driveUrl});
   String get meta => '${capturedAt.day} ${kMonths[capturedAt.month - 1].substring(0, 3)} · ${hm(capturedAt)} WIB';
   Map<String, dynamic> toJson() => {
-        'id': id, 'title': title, 'scheduleId': scheduleId, 'photo': photoPath, 'at': capturedAt.toIso8601String(),
+        'id': id, 'title': title, 'scheduleId': scheduleId, 'photo': photoPath, 'at': capturedAt.toIso8601String(), 'taken': takenAt?.toIso8601String(),
         'lat': lat, 'lng': lng, 'acc': accuracy, 'place': placeName, 'desc': description, 'upload': upload.index, 'drive': driveUrl,
       };
   factory Memory.fromJson(Map<String, dynamic> j) => Memory(
       id: j['id'], title: j['title'], scheduleId: j['scheduleId'], photoPath: j['photo'], capturedAt: DateTime.parse(j['at']),
+      takenAt: j['taken'] == null ? null : DateTime.tryParse(j['taken']),
       lat: (j['lat'] as num?)?.toDouble(), lng: (j['lng'] as num?)?.toDouble(), accuracy: (j['acc'] as num?)?.toDouble(), placeName: j['place'], description: j['desc'] ?? '', upload: UploadStatus.values[j['upload'] ?? 0], driveUrl: j['drive']);
 }
 

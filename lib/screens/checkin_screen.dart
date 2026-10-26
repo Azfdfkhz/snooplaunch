@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../core/models.dart';
@@ -6,7 +5,13 @@ import '../core/theme.dart';
 import '../core/widgets.dart';
 import '../main.dart';
 import '../services/capture_service.dart';
+import 'attendance_done_screen.dart';
+import 'attendance_preview_screen.dart';
 
+/// Layar "Foto Absensi". Alur: ambil foto -> tinjau (Gunakan / Ambil Ulang / Batalkan) ->
+/// absensi dicatat -> layar hasil dengan tombol bagikan bukti.
+/// Aturan bisnis tidak berubah: waktu dicatat saat foto dikonfirmasi, satu absensi per hari,
+/// pencatatan local-first lalu disinkronkan oleh AppState/SyncService.
 class CheckInScreen extends StatefulWidget {
   final bool isOut;
   const CheckInScreen({super.key, this.isOut = false});
@@ -15,123 +20,231 @@ class CheckInScreen extends StatefulWidget {
 }
 
 class _CheckInScreenState extends State<CheckInScreen> {
-  bool _loading = false;
+  bool _working = false;
+  String _stage = '';
+  CaptureFailure? _failure;
 
   Future<void> _run() async {
     final s = AppScope.of(context);
-    if (_loading || s.busy) return; // cegah tap ganda
-    setState(() => _loading = true);
+    if (_working || s.busy) return; // cegah tap ganda
+    setState(() { _working = true; _failure = null; _stage = 'Membuka kamera…'; });
     s.busy = true;
     try {
-      final res = await CaptureService.capture();
-      if (res == null || !mounted) return;
-      final ok = await showModalBottomSheet<bool>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: C.bg,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-        builder: (_) => _Preview(res: res, isOut: widget.isOut),
-      );
-      if (ok != true || !mounted) return;
+      late CaptureResult photo;
+      while (true) {
+        final r = await CaptureService.capture(onStage: (t) { if (mounted) setState(() => _stage = t); });
+        if (r == null || !mounted) {
+          if (r != null) CaptureService.discard(r.photoPath);
+          return; // kamera ditutup tanpa foto
+        }
+        final action = await Navigator.of(context).push<PreviewAction>(
+          MaterialPageRoute(fullscreenDialog: true, builder: (_) => AttendancePreviewScreen(res: r, isOut: widget.isOut)),
+        );
+        if (action == PreviewAction.use) {
+          photo = r;
+          break;
+        }
+        CaptureService.discard(r.photoPath); // diambil ulang atau dibatalkan
+        if (action == PreviewAction.retake && mounted) {
+          setState(() => _stage = 'Membuka kamera…');
+          continue;
+        }
+        return;
+      }
+      if (!mounted) return;
+
       final now = DateTime.now(); // waktu dicatat saat dikonfirmasi
       final saved = widget.isOut
-          ? s.recordCheckOut(at: now, lat: res.lat, lng: res.lng, acc: res.accuracy)
-          : s.recordCheckIn(at: now, lat: res.lat, lng: res.lng, acc: res.accuracy);
+          ? s.recordCheckOut(at: now, lat: photo.lat, lng: photo.lng, acc: photo.accuracy)
+          : s.recordCheckIn(at: now, lat: photo.lat, lng: photo.lng, acc: photo.accuracy);
       if (!saved) {
+        CaptureService.discard(photo.photoPath);
         _snack('Absensi sudah tercatat hari ini.');
-      } else {
-        final near = s.scheduleNear(now);
-        s.addMemory(Memory(
-          id: const Uuid().v4(),
-          title: near?.title ?? (widget.isOut ? 'Absen Pulang' : 'Absen Masuk'),
-          scheduleId: near?.id,
-          photoPath: res.photoPath,
-          capturedAt: now,
-          lat: res.lat, lng: res.lng, accuracy: res.accuracy, placeName: res.placeName,
-          description: widget.isOut ? 'Dokumentasi absen pulang.' : 'Dokumentasi absen masuk.',
-        ));
-        _snack(widget.isOut ? 'Absen pulang tercatat ${hm(now)}.' : 'Absen masuk tercatat ${hm(now)}.');
+        if (mounted) Navigator.of(context).pop();
+        return;
       }
-      if (mounted) Navigator.of(context).pop();
+      final stored = await CaptureService.persist(photo.photoPath);
+      final near = s.scheduleNear(now);
+      s.addMemory(Memory(
+        id: const Uuid().v4(),
+        title: near?.title ?? (widget.isOut ? 'Absen Pulang' : 'Absen Masuk'),
+        scheduleId: near?.id,
+        photoPath: stored,
+        capturedAt: now,
+        takenAt: photo.takenAt,
+        lat: photo.lat, lng: photo.lng, accuracy: photo.accuracy, placeName: photo.placeName,
+        description: widget.isOut ? 'Dokumentasi absen pulang.' : 'Dokumentasi absen masuk.',
+      ));
+      if (!mounted) return;
+      await Navigator.of(context).pushReplacement(MaterialPageRoute(
+        builder: (_) => AttendanceDoneScreen(capture: photo, photoPath: stored, isOut: widget.isOut, recordedAt: now),
+      ));
+    } on CaptureFailure catch (e) {
+      if (mounted) setState(() => _failure = e);
+    } catch (_) {
+      if (mounted) setState(() => _failure = const CaptureFailure(CaptureFailureKind.unknown, 'Terjadi kesalahan saat mengambil foto. Coba lagi.'));
     } finally {
       s.busy = false;
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _working = false);
     }
   }
 
-  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  void _snack(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  }
 
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
+    final theme = Theme.of(context);
+    final kind = widget.isOut ? 'Pulang' : 'Masuk';
+    final f = _failure;
+
     return Scaffold(
-      appBar: AppBar(title: Text(widget.isOut ? 'Absensi Pulang' : 'Absensi Masuk'), backgroundColor: Colors.transparent, elevation: 0),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(children: [
-          const SizedBox(height: 12),
-          const Mascot(size: 150),
-          const SizedBox(height: 16),
-          Text(widget.isOut ? 'Waktunya pulang!' : 'Ayo absen!', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 6),
-          Text('Pastikan kamu berada di lokasi kerja\ndan aktifkan kamera serta lokasi.', textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 20),
-          SnoopCard(color: C.soft, child: Row(children: [
-            const Icon(Icons.event_outlined), const SizedBox(width: 12),
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(widget.isOut ? 'Jadwal Pulang' : 'Jadwal Masuk', style: Theme.of(context).textTheme.bodySmall),
-              Text(minToHm(widget.isOut ? s.workEndMin : s.workStartMin), style: const TextStyle(fontWeight: FontWeight.w600)),
+      appBar: AppBar(title: const Text('Foto Absensi')),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(S.x5, 0, S.x5, S.x4),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Foto ini menjadi bukti kehadiranmu. Pastikan wajah dan suasana tempat kerja terlihat jelas.',
+                style: theme.textTheme.bodySmall?.copyWith(fontSize: 14)),
+            const SizedBox(height: S.x4),
+            Expanded(child: _Viewfinder(working: _working, stage: _stage, onTap: _run)),
+            const SizedBox(height: S.x4),
+            Wrap(spacing: S.x2, runSpacing: S.x2, children: [
+              StatusChip('Absen $kind', bg: C.accentSoft, fg: C.ink, icon: widget.isOut ? Icons.logout_rounded : Icons.login_rounded),
+              StatusChip('Jadwal ${minToHm(widget.isOut ? s.workEndMin : s.workStartMin)}', bg: C.soft, fg: C.text, icon: Icons.event_outlined),
             ]),
-          ])),
-          const SizedBox(height: 8),
-          SnoopCard(color: C.soft, child: Row(children: [
-            const Icon(Icons.place_outlined), const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Lokasi', style: Theme.of(context).textTheme.bodySmall),
-              Text(s.company, style: const TextStyle(fontWeight: FontWeight.w600)),
-            ])),
-          ])),
-          const Spacer(),
-          PillButton(icon: Icons.photo_camera_outlined, label: _loading ? 'Memproses...' : 'Mulai Absen', onPressed: _loading ? null : _run),
-          const SizedBox(height: 8),
+            const SizedBox(height: S.x3),
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Icon(Icons.place_outlined, size: 18, color: C.text2),
+              const SizedBox(width: S.x2),
+              Expanded(child: Text('Lokasi diambil saat foto dibuat. Aktifkan GPS agar lokasi ikut tercatat; tanpa lokasi, absensi tetap bisa dicatat.', style: theme.textTheme.bodySmall)),
+            ]),
+            if (f != null) ...[
+              const SizedBox(height: S.x4),
+              Container(
+                padding: const EdgeInsets.all(S.x3),
+                decoration: BoxDecoration(color: C.errorSoft, borderRadius: BorderRadius.circular(R.small)),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Icon(Icons.error_outline_rounded, size: 20, color: C.error),
+                    const SizedBox(width: S.x2),
+                    Expanded(child: Text(f.message, style: const TextStyle(fontSize: 13.5, color: C.text))),
+                  ]),
+                  if (f.kind == CaptureFailureKind.cameraDenied)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: CaptureService.openAppSettings,
+                        style: TextButton.styleFrom(foregroundColor: C.ink),
+                        child: const Text('Buka Pengaturan', style: TextStyle(fontWeight: FontWeight.w700)),
+                      ),
+                    ),
+                ]),
+              ),
+            ],
+            const SizedBox(height: S.x4),
+            Center(child: _Shutter(working: _working, onTap: _run)),
+            const SizedBox(height: S.x2),
+            Center(child: Text(_working ? _stage : (f == null ? 'Ketuk untuk mengambil foto' : 'Ketuk untuk mencoba lagi'), style: theme.textTheme.bodySmall)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Panel panduan (bukan pratinjau langsung): kamera sistem dibuka saat tombol ditekan.
+class _Viewfinder extends StatelessWidget {
+  final bool working;
+  final String stage;
+  final VoidCallback onTap;
+  const _Viewfinder({required this.working, required this.stage, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget tip(String t) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.check_rounded, size: 16, color: C.accent),
+            const SizedBox(width: 8),
+            Text(t, style: const TextStyle(fontSize: 13.5, color: C.onNight2)),
+          ]),
+        );
+    return Material(
+      color: C.night,
+      borderRadius: BorderRadius.circular(R.card),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: working ? null : onTap,
+        child: Stack(children: [
+          const Positioned.fill(child: CustomPaint(painter: _BracketPainter())),
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(S.x8),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                if (working)
+                  const SizedBox(width: 40, height: 40, child: CircularProgressIndicator(strokeWidth: 3, color: C.accent))
+                else
+                  const Icon(Icons.photo_camera_outlined, size: 44, color: C.accent),
+                const SizedBox(height: S.x4),
+                Text(working ? stage : 'Siap mengambil foto', textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.onNight)),
+                if (!working) ...[
+                  const SizedBox(height: S.x3),
+                  tip('Wajah terlihat jelas'),
+                  tip('Cahaya cukup'),
+                  tip('Ada suasana tempat kerja'),
+                ],
+              ]),
+            ),
+          ),
         ]),
       ),
     );
   }
 }
 
-class _Preview extends StatelessWidget {
-  final CaptureResult res;
-  final bool isOut;
-  const _Preview({required this.res, required this.isOut});
+class _BracketPainter extends CustomPainter {
+  const _BracketPainter();
   @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('Tinjau dokumentasi', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          ClipRRect(borderRadius: BorderRadius.circular(16), child: SizedBox(height: 240, width: double.infinity, child: Image.file(File(res.photoPath), fit: BoxFit.cover, cacheWidth: 900))),
-          const SizedBox(height: 12),
-          Row(children: [const Icon(Icons.schedule, size: 16, color: C.text2), const SizedBox(width: 6), Text('${hm(now)} WIB', style: Theme.of(context).textTheme.bodyMedium)]),
-          const SizedBox(height: 4),
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Icon(Icons.place_outlined, size: 16, color: C.text2), const SizedBox(width: 6),
-            Expanded(child: Text(
-              res.lat == null
-                  ? (res.locationNote.isEmpty ? 'Lokasi tidak tersedia' : res.locationNote)
-                  : '${res.placeName ?? 'Koordinat'} (${res.lat!.toStringAsFixed(5)}, ${res.lng!.toStringAsFixed(5)}) ±${res.accuracy?.round() ?? '?'} m'
-                    '${res.locationNote.isEmpty ? '' : '\n${res.locationNote}'}',
-              style: Theme.of(context).textTheme.bodyMedium)),
-          ]),
-          const SizedBox(height: 16),
-          PillButton(label: isOut ? 'Konfirmasi Absen Pulang' : 'Konfirmasi Absen Masuk', onPressed: () => Navigator.pop(context, true)),
-          const SizedBox(height: 8),
-          PillButton(label: 'Ulangi', dark: false, onPressed: () => Navigator.pop(context, false)),
-        ]),
-      ),
-    );
+  void paint(Canvas canvas, Size size) {
+    const inset = 20.0, len = 36.0;
+    final p = Paint()..color = C.accent..style = PaintingStyle.stroke..strokeWidth = 4..strokeCap = StrokeCap.round;
+    final w = size.width, h = size.height;
+    final path = Path()
+      ..moveTo(inset, inset + len)..lineTo(inset, inset)..lineTo(inset + len, inset)
+      ..moveTo(w - inset - len, inset)..lineTo(w - inset, inset)..lineTo(w - inset, inset + len)
+      ..moveTo(inset, h - inset - len)..lineTo(inset, h - inset)..lineTo(inset + len, h - inset)
+      ..moveTo(w - inset - len, h - inset)..lineTo(w - inset, h - inset)..lineTo(w - inset, h - inset - len);
+    canvas.drawPath(path, p);
   }
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => false;
+}
+
+class _Shutter extends StatelessWidget {
+  final bool working;
+  final VoidCallback onTap;
+  const _Shutter({required this.working, required this.onTap});
+  @override
+  Widget build(BuildContext context) => Semantics(
+        button: true,
+        enabled: !working,
+        label: 'Ambil foto absensi',
+        child: GestureDetector(
+          onTap: working ? null : onTap,
+          child: Container(
+            width: 88, height: 88,
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: working ? C.border : C.ink, width: 4)),
+            child: Container(
+              decoration: BoxDecoration(shape: BoxShape.circle, color: working ? C.soft : C.accent),
+              child: Icon(Icons.photo_camera_rounded, size: 30, color: working ? C.text2 : C.ink),
+            ),
+          ),
+        ),
+      );
 }
