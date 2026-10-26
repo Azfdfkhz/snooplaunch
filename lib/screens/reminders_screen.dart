@@ -22,7 +22,7 @@ class _RemindersScreenState extends State<RemindersScreen> {
   IconData _icon(String t) => switch (t) {
         'air' => Icons.water_drop_outlined,
         'istirahat' => Icons.free_breakfast_outlined,
-        'absen' => Icons.timer_outlined,
+        'absen' => Icons.fingerprint_rounded, // sama dengan ikon absensi di Beranda
         'dokumentasi' => Icons.photo_camera_outlined,
         _ => Icons.notifications_none,
       };
@@ -56,11 +56,7 @@ class _RemindersScreenState extends State<RemindersScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Pengingat'), backgroundColor: Colors.transparent),
       body: Column(children: [
-        SizedBox(height: 44, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), children: [
-          for (final f in _filters) Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(
-            label: Text(f), selected: _f == f, showCheckmark: false, onSelected: (_) => setState(() => _f = f),
-            selectedColor: C.text, labelStyle: TextStyle(color: _f == f ? Colors.white : C.text2), shape: const StadiumBorder(), side: BorderSide.none, backgroundColor: C.soft)),
-        ])),
+        FilterChipRow<String>(options: _filters, selected: _f, labelOf: (f) => f, onSelected: (f) => setState(() => _f = f)),
         Expanded(child: list.isEmpty
             ? const EmptyState('Belum ada pengingat di kategori ini.')
             : ListView(padding: const EdgeInsets.all(16), children: [
@@ -68,10 +64,10 @@ class _RemindersScreenState extends State<RemindersScreen> {
                   Padding(padding: const EdgeInsets.only(bottom: 8), child: Dismissible(
                     key: ValueKey(r.id),
                     direction: DismissDirection.endToStart,
-                    background: Container(alignment: Alignment.centerRight, padding: const EdgeInsets.only(right: 20), decoration: BoxDecoration(color: C.pink, borderRadius: BorderRadius.circular(20)), child: const Icon(Icons.delete_outline)),
+                    background: Container(alignment: Alignment.centerRight, padding: const EdgeInsets.only(right: S.x5), decoration: BoxDecoration(color: C.errorSoft, borderRadius: BorderRadius.circular(R.small)), child: const Row(mainAxisSize: MainAxisSize.min, children: [Text('Hapus', style: TextStyle(fontWeight: FontWeight.w700, color: C.error)), SizedBox(width: S.x2), Icon(Icons.delete_outline, color: C.error)])),
                     onDismissed: (_) => s.deleteReminder(r.id),
                     child: SnoopCard(child: Row(children: [
-                      Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: C.blue.withValues(alpha: .5), borderRadius: BorderRadius.circular(14)), child: Icon(_icon(r.type))),
+                      Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: C.accentSoft, borderRadius: BorderRadius.circular(14)), child: Icon(_icon(r.type), color: C.ink)),
                       const SizedBox(width: 12),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(r.title, style: const TextStyle(fontWeight: FontWeight.w600)),

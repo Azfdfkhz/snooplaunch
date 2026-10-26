@@ -43,6 +43,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
+  /// Chip status kegiatan. Selalu berisi teks + ikon, supaya status tidak bergantung pada warna.
+  StatusChip _statusChip(ScheduleStatus st) => switch (st) {
+        ScheduleStatus.completed => StatusChip('Selesai', bg: C.successSoft, fg: C.success, icon: Icons.check_circle_rounded),
+        ScheduleStatus.inProgress => StatusChip('Berlangsung', bg: C.accent, fg: C.ink, icon: Icons.play_arrow_rounded),
+        ScheduleStatus.skipped => StatusChip('Dilewati', bg: C.soft, fg: C.text2, icon: Icons.skip_next_rounded),
+        ScheduleStatus.cancelled => StatusChip('Dibatalkan', bg: C.soft, fg: C.text2, icon: Icons.cancel_outlined),
+        ScheduleStatus.upcoming => StatusChip('Akan datang', bg: C.accentSoft, fg: C.ink, icon: Icons.schedule_rounded),
+      };
+
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
@@ -50,20 +59,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final monday = now.subtract(Duration(days: now.weekday - 1));
     final days = List.generate(7, (i) => monday.add(Duration(days: i)));
 
-    (String, Color, Color) chip(ScheduleStatus st) => switch (st) {
-          ScheduleStatus.completed => ('Selesai', C.mint, C.success),
-          ScheduleStatus.inProgress => ('Berlangsung', C.blue, const Color(0xFF3B6F94)),
-          ScheduleStatus.skipped => ('Dilewati', C.soft, C.text2),
-          ScheduleStatus.cancelled => ('Dibatalkan', C.soft, C.text2),
-          ScheduleStatus.upcoming => ('Upcoming', C.orangeSoft, const Color(0xFFC77A2B)),
-        };
-
     return Stack(children: [
       ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 90), children: [
-        Row(children: [
-          const Icon(Icons.calendar_today_rounded, size: 18), const SizedBox(width: 8),
-          Text('Jadwal', style: Theme.of(context).textTheme.headlineSmall),
-        ]),
+        const PageTitle('Jadwal', icon: Icons.calendar_today_rounded),
         const SizedBox(height: 12),
         Text('${kMonths[now.month - 1]} ${now.year}', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
@@ -76,11 +74,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   duration: const Duration(milliseconds: 150),
                   margin: const EdgeInsets.symmetric(horizontal: 2),
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(color: _sameDay(d, _sel) ? C.text : Colors.transparent, borderRadius: BorderRadius.circular(16)),
+                  decoration: BoxDecoration(color: _sameDay(d, _sel) ? C.accent : Colors.transparent, borderRadius: BorderRadius.circular(16)),
                   child: Column(children: [
-                    Text(kDaysShort[d.weekday - 1], style: TextStyle(fontSize: 11, color: _sameDay(d, _sel) ? Colors.white70 : C.text2)),
+                    Text(kDaysShort[d.weekday - 1], style: TextStyle(fontSize: 11, color: _sameDay(d, _sel) ? C.ink : C.text2)),
                     const SizedBox(height: 2),
-                    Text('${d.day}', style: TextStyle(fontWeight: FontWeight.w700, color: _sameDay(d, _sel) ? Colors.white : C.text)),
+                    Text('${d.day}', style: TextStyle(fontWeight: FontWeight.w700, color: _sameDay(d, _sel) ? C.ink : C.text)),
                   ]),
                 ),
               ),
@@ -96,8 +94,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 onTap: () => setState(() => _weekly = i == 1),
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(color: (_weekly ? 1 : 0) == i ? C.text : Colors.transparent, borderRadius: BorderRadius.circular(26)),
-                  child: Center(child: Text(label, style: TextStyle(fontWeight: FontWeight.w600, color: (_weekly ? 1 : 0) == i ? Colors.white : C.text2))),
+                  decoration: BoxDecoration(color: (_weekly ? 1 : 0) == i ? C.accent : Colors.transparent, borderRadius: BorderRadius.circular(26)),
+                  child: Center(child: Text(label, style: TextStyle(fontWeight: FontWeight.w600, color: (_weekly ? 1 : 0) == i ? C.ink : C.text2))),
                 ),
               )),
           ]),
@@ -127,14 +125,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     Text(it.title, style: const TextStyle(fontSize: 13)),
                     if (it.place.isNotEmpty) Text(it.place, style: Theme.of(context).textTheme.bodySmall),
                   ])),
-                  StatusChip(chip(it.effective(now)).$1, bg: chip(it.effective(now)).$2, fg: chip(it.effective(now)).$3),
+                  _statusChip(it.effective(now)),
                 ]),
               ),
             ),
       ]),
       Positioned(
         right: 20, bottom: 12,
-        child: FloatingActionButton(onPressed: _add, backgroundColor: C.text, foregroundColor: Colors.white, shape: const CircleBorder(), child: const Icon(Icons.add)),
+        child: FloatingActionButton(onPressed: _add, backgroundColor: C.accent, foregroundColor: C.ink, shape: const CircleBorder(), child: const Icon(Icons.add)),
       ),
     ]);
   }

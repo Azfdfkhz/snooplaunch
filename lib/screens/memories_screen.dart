@@ -39,12 +39,8 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
         }).toList();
     final legacy = s.photosPendingUpload.length;
     return Column(children: [
-      Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 8), child: Row(children: [Text('Memories', style: Theme.of(context).textTheme.headlineSmall)])),
-      SizedBox(height: 44, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), children: [
-        for (final f in _filters) Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(
-          label: Text(f), selected: _f == f, showCheckmark: false, onSelected: (_) => setState(() => _f = f),
-          selectedColor: C.text, labelStyle: TextStyle(color: _f == f ? Colors.white : C.text2), shape: const StadiumBorder(), side: BorderSide.none, backgroundColor: C.soft)),
-      ])),
+      const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 8), child: PageTitle('Memories', icon: Icons.photo_library_outlined)),
+      FilterChipRow<String>(options: _filters, selected: _f, labelOf: (f) => f, onSelected: (f) => setState(() => _f = f)),
       if (legacy > 0)
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),

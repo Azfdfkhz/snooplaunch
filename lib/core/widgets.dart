@@ -182,7 +182,7 @@ class PolaroidCard extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: C.surface,
               borderRadius: BorderRadius.circular(6),
               boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 10, offset: Offset(0, 4))],
             ),
@@ -262,6 +262,52 @@ class CapsuleNav extends StatelessWidget {
                 ),
             ],
           ),
+        ),
+      );
+}
+
+/// Judul halaman tab utama (Jadwal, Memories, Profil). Satu pola untuk semua tab.
+class PageTitle extends StatelessWidget {
+  final String title;
+  final IconData? icon;
+  const PageTitle(this.title, {super.key, this.icon});
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        if (icon != null) ...[Icon(icon, size: 20, color: C.text), const SizedBox(width: S.x2)],
+        Expanded(child: Text(title, style: Theme.of(context).textTheme.headlineSmall)),
+      ]);
+}
+
+/// Baris filter kapsul horizontal. Terpilih = kuning aksen (sama dengan beranda), tidak terpilih = soft.
+class FilterChipRow<T> extends StatelessWidget {
+  final List<T> options;
+  final T selected;
+  final String Function(T) labelOf;
+  final ValueChanged<T> onSelected;
+  const FilterChipRow({super.key, required this.options, required this.selected, required this.labelOf, required this.onSelected});
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: 48,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: S.x4),
+          children: [
+            for (final o in options)
+              Padding(
+                padding: const EdgeInsets.only(right: S.x2),
+                child: ChoiceChip(
+                  label: Text(labelOf(o)),
+                  selected: o == selected,
+                  showCheckmark: false,
+                  onSelected: (_) => onSelected(o),
+                  selectedColor: C.accent,
+                  backgroundColor: C.soft,
+                  side: BorderSide.none,
+                  shape: const StadiumBorder(),
+                  labelStyle: TextStyle(fontWeight: FontWeight.w700, color: o == selected ? C.ink : C.text2),
+                ),
+              ),
+          ],
         ),
       );
 }
