@@ -9,6 +9,7 @@ import '../core/theme.dart';
 import '../core/widgets.dart';
 import '../main.dart';
 import '../services/task_evidence_store.dart';
+import 'streak_screen.dart';
 
 /// Jadwal per tanggal. Status kegiatan dicatat untuk tanggal yang dipilih, sehingga status hari Senin
 /// tidak terbawa ke Selasa atau minggu berikutnya. Absensi dan catatan mingguan ikut tampil per tanggal.
@@ -64,6 +65,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   void _saveNote() {
     AppScope.of(context).setWeekNote(_sel, _note.text);
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('Catatan minggu disimpan.')));
+  }
+
+  Future<void> _markPast(AppState s) async {
+    final err = await s.markPastAttendance(_sel);
+    _toast(err ?? 'Absensi ${dateLong(_sel)} ditandai hadir.');
   }
 
   void _toast(String msg) => ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(msg)));
@@ -310,7 +316,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return Stack(children: [
       ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 96), children: [
         const PageTitle('Jadwal', icon: Icons.calendar_today_rounded),
-        const SizedBox(height: S.x3),
+        Align(alignment: Alignment.centerLeft, child: StreakBadge(days: s.streak, onTap: () => openStreak(context, s))),
+        const SizedBox(height: S.x2),
         _dateBar(today),
         const SizedBox(height: S.x3),
         _weekStrip(s, days, today),
@@ -468,12 +475,25 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final a = s.attendanceOn(_sel);
     if (a == null) {
       final msg = future ? 'Belum tiba' : (_same(_sel, today) ? 'Belum absen hari ini' : 'Tidak ada absensi pada tanggal ini');
+      // Hari kerja lampau yang kosong: bisa ditandai hadir (lupa absen) agar streak terbaca.
+      final canMark = s.dayKindOn(_sel) == 'absen';
       return SnoopCard(
         color: C.soft,
-        child: Row(children: [
-          const Icon(Icons.fingerprint_rounded, color: C.text2),
-          const SizedBox(width: S.x3),
-          Expanded(child: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            const Icon(Icons.fingerprint_rounded, color: C.text2),
+            const SizedBox(width: S.x3),
+            Expanded(child: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600))),
+          ]),
+          if (canMark) ...[
+            const SizedBox(height: S.x3),
+            FilledButton.icon(
+              onPressed: () => _markPast(s),
+              icon: const Icon(Icons.how_to_reg_rounded, size: 18),
+              label: const Text('Tandai hadir (masuk)', style: TextStyle(fontWeight: FontWeight.w800)),
+              style: FilledButton.styleFrom(backgroundColor: C.accent, foregroundColor: C.ink, shape: const StadiumBorder()),
+            ),
+          ],
         ]),
       );
     }

@@ -312,3 +312,34 @@ class FilterChipRow<T> extends StatelessWidget {
         ),
       );
 }
+
+/// Api streak absensi: jumlah hari kerja berturut-turut dengan absensi.
+/// dark = true untuk latar gelap (Beranda), false untuk latar terang.
+class StreakBadge extends StatelessWidget {
+  final int days;
+  final bool dark;
+  final VoidCallback? onTap;
+  const StreakBadge({super.key, required this.days, this.dark = false, this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    final lit = days > 0;
+    final fg = dark ? C.onNight : C.text;
+    final flame = lit ? (dark ? C.accent : C.warning) : C.text2;
+    return Semantics(
+      button: onTap != null,
+      label: 'Streak absensi $days hari berturut-turut',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(R.small),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: S.x2, vertical: 6),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.local_fire_department_rounded, size: 20, color: flame),
+            const SizedBox(width: 4),
+            Text(lit ? '$days hari' : 'Mulai streak', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: fg)),
+          ]),
+        ),
+      ),
+    );
+  }
+}

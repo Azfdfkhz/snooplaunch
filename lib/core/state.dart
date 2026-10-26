@@ -144,6 +144,7 @@ class AppState extends ChangeNotifier {
         _authSub = BackendService.instance.authChanges.listen((_) {
           notifyListeners();
           sync.retryPending();
+          unawaited(pullAttendanceFromServer());
           unawaited(migrateLegacyPhotos());
         });
       } catch (_) {}
@@ -167,6 +168,7 @@ class AppState extends ChangeNotifier {
       // Data lokal tetap berfungsi bila izin notifikasi tidak tersedia.
     }
     await sync.retryPending();
+    unawaited(pullAttendanceFromServer());
     unawaited(migrateLegacyPhotos());
   }
 
@@ -303,21 +305,99 @@ class AppState extends ChangeNotifier {
     return List.generate(7, (i) => days.contains(dayKey(monday.add(Duration(days: i)))));
   }
 
-  /// Hari kerja beruntun dengan absensi. Akhir pekan tanpa absensi tidak memutus rangkaian.
-  int get streak {
-    final days = _presenceDays;
-    var d = DateTime.now();
-    if (!days.contains(dayKey(d))) d = d.subtract(const Duration(days: 1));
-    var n = 0;
-    for (var i = 0; i < 366; i++) {
-      if (days.contains(dayKey(d))) {
-        n++;
-      } else if (d.weekday < DateTime.saturday) {
-        break;
+  /// Streak = hari kerja berturut-turut dengan absensi. Akhir pekan tanpa absensi, izin, dan sakit tidak memutus streak.
+  /// Hari kerja tanpa absensi memutus streak. Hari ini yang belum absen belum dianggap putus.
+  ({int current, int best}) _streaks() {
+    if (attendance.isEmpty) return (current: 0, best: 0);
+    final presence = _presenceDays;
+    final leave = {for (final a in attendance) if (a.status == AttendanceStatus.leave) a.day};
+    final todayKey = dayKey(DateTime.now());
+    final earliest = attendance.map((a) => a.day).reduce((x, y) => x.compareTo(y) <= 0 ? x : y);
+    final parts = earliest.split('-').map(int.parse).toList();
+    var d = DateTime(parts[0], parts[1], parts[2]);
+    var run = 0;
+    var best = 0;
+    while (dayKey(d).compareTo(todayKey) <= 0) {
+      final k = dayKey(d);
+      if (presence.contains(k)) {
+        run++;
+      } else if (!leave.contains(k) && d.weekday < DateTime.saturday && k != todayKey) {
+        run = 0;
       }
-      d = d.subtract(const Duration(days: 1));
+      if (run > best) best = run;
+      d = DateTime(d.year, d.month, d.day + 1);
     }
-    return n;
+    return (current: run, best: best);
+  }
+
+  int get streak => _streaks().current;
+  int get longestStreak => _streaks().best;
+  int get presentDayCount => _presenceDays.length;
+
+  /// Kategori satu tanggal untuk kalender streak: 'hadir' | 'izin' | 'absen' (hari kerja tanpa absensi)
+  /// | 'libur' (akhir pekan tanpa absensi) | 'belum' (hari ini dan masa depan).
+  String dayKindOn(DateTime d) {
+    final now = DateTime.now();
+    final key = dayKey(d);
+    if (key.compareTo(dayKey(now)) > 0) return 'belum';
+    final a = attendanceOn(d);
+    if (a != null) return a.status == AttendanceStatus.leave ? 'izin' : 'hadir';
+    if (key == dayKey(now)) return 'belum';
+    return d.weekday >= DateTime.saturday ? 'libur' : 'absen';
+  }
+
+  AttendanceStatus _serverStatus(String? s) => switch (s) {
+        'late' => AttendanceStatus.late,
+        'checked_out' => AttendanceStatus.checkedOut,
+        'needs_attention' => AttendanceStatus.needsAttention,
+        'pending' => AttendanceStatus.pending,
+        'leave' => AttendanceStatus.leave,
+        _ => AttendanceStatus.present,
+      };
+
+  /// Menandai hadir (masuk) untuk hari kerja lampau yang kosong. Mengembalikan null bila berhasil,
+  /// atau pesan kesalahan untuk ditampilkan.
+  Future<String?> markPastAttendance(DateTime day) async {
+    if (!signedIn) return 'Masuk ke akun cloud dulu untuk menandai absensi.';
+    try {
+      await BackendService.instance.markPastAttendance(dayKey(day), 'Ditandai manual (lupa absen)');
+      await pullAttendanceFromServer();
+      return null;
+    } catch (_) {
+      return 'Gagal menandai absensi. Periksa koneksi lalu coba lagi.';
+    }
+  }
+
+  /// Memuat riwayat absensi dari server, termasuk data sebelum aplikasi ini dipakai.
+  /// Catatan lokal yang belum terkirim tidak ditimpa (antreannya akan mengirim). Aman dipanggil berulang.
+  Future<void> pullAttendanceFromServer() async {
+    if (!signedIn) return;
+    try {
+      final rows = await BackendService.instance.fetchAllAttendance();
+      for (final row in rows) {
+        final checkIn = DateTime.parse(row['check_in_at'] as String).toLocal();
+        final day = dayKey(checkIn);
+        final local = attendanceOn(checkIn);
+        if (local != null && !local.synced) continue;
+        final a = Attendance(
+          id: row['id'] as String,
+          day: day,
+          checkInAt: checkIn,
+          status: _serverStatus(row['status'] as String?),
+          synced: true,
+          offlineTime: row['time_source'] == 'device_queued' || row['check_out_time_source'] == 'device_queued',
+          leaveType: row['leave_type'] as String?,
+          note: row['note'] as String?,
+        );
+        final out = row['check_out_at'] as String?;
+        if (out != null) a.checkOutAt = DateTime.parse(out).toLocal();
+        attendance.removeWhere((e) => e.day == day);
+        attendance.add(a);
+      }
+      changed();
+    } catch (_) {
+      // Offline atau belum masuk: data lokal tetap dipakai.
+    }
   }
 
   int tasksDoneOn(DateTime day) {

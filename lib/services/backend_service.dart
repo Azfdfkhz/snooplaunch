@@ -91,6 +91,24 @@ class BackendService {
   }
 
   /// Riwayat dari server (untuk menampilkan data di perangkat baru).
+  /// Menandai hadir untuk hari kerja lampau yang belum ada absensinya (dari tanggal 'yyyy-mm-dd').
+  Future<Map<String, dynamic>> markPastAttendance(String day, String note) =>
+      _rpc('snoop_mark_past_attendance', {'p_day': day, 'p_note': note});
+
+  /// Seluruh riwayat absensi milik pengguna (paginasi 1000 baris). RLS membatasi ke baris sendiri.
+  Future<List<Map<String, dynamic>>> fetchAllAttendance() async {
+    final out = <Map<String, dynamic>>[];
+    var from = 0;
+    while (true) {
+      final rows = await client.from('attendance_records').select().order('check_in_at', ascending: true).range(from, from + 999);
+      final list = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      out.addAll(list);
+      if (list.length < 1000) break;
+      from += 1000;
+    }
+    return out;
+  }
+
   Future<List<Map<String, dynamic>>> fetchAttendance({int limit = 60}) async {
     final rows = await client.from('attendance_records').select().order('check_in_at', ascending: false).limit(limit);
     return (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();

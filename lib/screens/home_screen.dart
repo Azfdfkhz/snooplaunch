@@ -10,6 +10,7 @@ import '../main.dart';
 import '../services/launcher_service.dart';
 import 'auth_screen.dart';
 import 'checkin_screen.dart';
+import 'streak_screen.dart';
 import 'memories_screen.dart';
 
 /// Home launcher (Update 1.0.0). Urutan konten:
@@ -170,15 +171,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: S.x3),
         Wrap(spacing: S.x3, runSpacing: S.x2, crossAxisAlignment: WrapCrossAlignment.center, children: [
           StatusChip(chipText, bg: chipBg, fg: chipFg, icon: chipIcon),
-          Semantics(
-            label: 'Hadir beruntun ${s.streak} hari',
-            excludeSemantics: true,
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.local_fire_department_rounded, size: 18, color: C.accent),
-              const SizedBox(width: 2),
-              Text('${s.streak} hari', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: C.onNight)),
-            ]),
-          ),
+          StreakBadge(days: s.streak, dark: true, onTap: () => openStreak(context, s)),
         ]),
         const SizedBox(height: S.x4),
         _WeekRow(marks: _weekMarks(s, now), todayIndex: now.weekday - 1),
