@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import '../main.dart';
 import '../services/capture_service.dart';
 
 enum PreviewAction { use, retake, cancel }
@@ -98,6 +99,23 @@ class _AttendancePreviewScreenState extends State<AttendancePreviewScreen> {
               info(Icons.schedule_rounded, 'Tanggal & waktu', '${dateLong(_now)} · ${hm(_now)} WIB'),
               info(Icons.place_outlined, 'Lokasi', _locationText),
               Text('Waktu absen dicatat saat kamu menekan "Gunakan Foto".', style: theme.textTheme.bodySmall),
+              if (!AppScope.of(context).photoUploadReady) ...[
+                const SizedBox(height: S.x2),
+                Container(
+                  padding: const EdgeInsets.all(S.x3),
+                  decoration: BoxDecoration(color: C.warningSoft, borderRadius: BorderRadius.circular(R.small)),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Icon(Icons.cloud_off_outlined, size: 18, color: C.warning),
+                    const SizedBox(width: S.x2),
+                    Expanded(child: Text(
+                      AppScope.of(context).backendConfigured
+                          ? 'Kamu belum masuk, jadi foto belum bisa diunggah ke Google Drive. Absensi tetap dicatat, tetapi foto tidak disimpan di perangkat.'
+                          : 'Server belum dikonfigurasi, jadi foto tidak bisa diunggah. Absensi tetap dicatat, tetapi foto tidak disimpan di perangkat.',
+                      style: const TextStyle(fontSize: 12.5, color: C.text),
+                    )),
+                  ]),
+                ),
+              ],
             ]),
           ),
           Padding(

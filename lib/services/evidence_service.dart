@@ -12,7 +12,10 @@ import '../core/theme.dart';
 /// Data aktual yang dipakai untuk membuat gambar bukti. Semua nilai berasal dari
 /// catatan absensi dan hasil capture; tidak ada nilai bawaan yang dikarang.
 class EvidenceData {
-  final String photoPath;
+  /// Salah satu dari [photoBytes] atau [photoPath] wajib ada. Bytes dipakai karena berkas sementara
+  /// sudah dihapus setelah foto terunggah ke Drive.
+  final String? photoPath;
+  final Uint8List? photoBytes;
   final String studentName;
   final String school; // boleh kosong
   final String company; // boleh kosong
@@ -33,7 +36,8 @@ class EvidenceData {
   final bool timeFromDevice;
 
   const EvidenceData({
-    required this.photoPath,
+    this.photoPath,
+    this.photoBytes,
     required this.studentName,
     this.school = '',
     this.company = '',
@@ -120,16 +124,19 @@ class EvidenceService {
     if (d.studentName.trim().isEmpty) {
       throw const EvidenceException('Nama siswa belum diisi. Lengkapi di Profil, lalu coba lagi.');
     }
-    final photoFile = File(d.photoPath);
-    if (!await photoFile.exists()) {
-      throw const EvidenceException('Foto absensi tidak ditemukan di perangkat.');
+    Uint8List? bytes = d.photoBytes;
+    if (bytes == null) {
+      final pf = d.photoPath == null ? null : File(d.photoPath!);
+      if (pf == null || !await pf.exists()) {
+        throw const EvidenceException('Foto absensi tidak tersedia di perangkat.');
+      }
+      bytes = await pf.readAsBytes();
     }
     await purgeOld();
 
     ui.Image? photo;
     ui.Image? out;
     try {
-      final bytes = await photoFile.readAsBytes();
       final codec = await ui.instantiateImageCodec(bytes); // orientasi EXIF diterapkan oleh decoder Flutter
       photo = (await codec.getNextFrame()).image;
       codec.dispose();

@@ -3,8 +3,6 @@ import '../core/models.dart';
 import 'backend_service.dart';
 
 typedef AttendanceApplied = void Function(String localId, Map<String, dynamic> serverRow);
-typedef MemoryUploaded = void Function(String memoryId, String? driveUrl);
-typedef MemoryUploadFailed = void Function(String memoryId);
 
 /// Sinkronisasi local-first. Catatan selalu disimpan di perangkat dulu, lalu didorong ke
 /// server. Jika offline / belum login / gagal, catatan masuk antrean persisten dan dicoba
@@ -20,8 +18,6 @@ class HybridSyncService implements SyncService {
   final _queue = PendingSyncQueue();
 
   AttendanceApplied? onAttendanceApplied;
-  MemoryUploaded? onMemoryUploaded;
-  MemoryUploadFailed? onMemoryUploadFailed;
   StatusCallback? onStatusChanged;
 
   int workStartMin = 8 * 60;
@@ -62,26 +58,30 @@ class HybridSyncService implements SyncService {
     await _refreshCount();
   }
 
+  /// Hanya metadata dokumentasi. Foto diunggah terpisah oleh AppState.uploadMemoryPhoto dan tidak pernah
+  /// masuk antrean ini, sehingga antrean tidak memuat path berkas yang bisa sudah dihapus.
   @override
   Future<void> pushMemory(Memory m) async {
+    final meta = {'id': m.id, 'kind': 'memory', 'payload': (m.toJson()..remove('photo'))};
     if (!ready) {
       lastError = _why();
-      await _queue.enqueue({'id': m.id, 'kind': 'memory', 'payload': m.toJson()});
+      await _queue.enqueue(meta);
       return _refreshCount();
     }
     try {
       await _backend.syncMemory(m);
-      if (m.upload != UploadStatus.uploaded && m.photoPath != null) {
-        final res = await _backend.uploadPhoto(m);
-        onMemoryUploaded?.call(m.id, res['drive_file_url'] as String?);
-      }
       await _queue.remove(m.id, 'memory');
       lastError = null;
     } catch (e) {
       lastError = _describe(e);
-      onMemoryUploadFailed?.call(m.id);
-      await _queue.enqueue({'id': m.id, 'kind': 'memory', 'payload': m.toJson()});
+      await _queue.enqueue(meta);
     }
+    await _refreshCount();
+  }
+
+  /// Membuang entri antrean metadata dokumentasi yang sudah dihapus.
+  Future<void> forgetMemory(String id) async {
+    await _queue.remove(id, 'memory');
     await _refreshCount();
   }
 

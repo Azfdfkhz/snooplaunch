@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../core/launcher_widgets.dart';
+import '../core/memory_photo.dart';
 import '../core/models.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
@@ -43,11 +43,11 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.fromLTRB(S.x4, S.x2, S.x4, S.x4),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           _attendanceWidget(context, s),
+          ..._serverAlert(context, s),
           const SizedBox(height: S.x3),
           _Tick(builder: (ctx, now) => _scheduleAndMemories(ctx, s, now)),
           const SizedBox(height: S.x3),
           _Tick(builder: (ctx, now) => _reminderPill(ctx, s)),
-          ..._syncHint(s),
           const SizedBox(height: S.x4),
           _shortcuts(context),
           _favorites(context),
@@ -131,23 +131,25 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _attendanceWidget(BuildContext context, AppState s) {
     final now = DateTime.now();
     final att = s.today;
-    final st = s.todayStatus;
     final canOut = att != null && att.checkOutAt == null;
     final done = att?.checkOutAt != null;
+    final deviceTime = att?.offlineTime == true ? ' · jam perangkat' : '';
 
-    // Absensi yang belum dikonfirmasi server tidak boleh tampil sebagai terverifikasi.
-    final (String chipText, Color chipBg, Color chipFg, IconData chipIcon) = att != null && !att.synced
-        ? ('Menunggu server · ${hm(att.checkOutAt ?? att.checkInAt)}', C.accentSoft, C.ink, Icons.hourglass_top_rounded)
-        : switch (st) {
-            AttendanceStatus.notCheckedIn => ('Belum absen', C.warningSoft, C.warning, Icons.schedule_rounded),
-            AttendanceStatus.pending => ('Menunggu sinkronisasi', C.accentSoft, C.ink, Icons.sync_rounded),
-            AttendanceStatus.present => ('Hadir ${hm(att!.checkInAt)}${att.offlineTime ? ' · offline' : ''}', C.successSoft, C.success, Icons.check_circle_rounded),
-            AttendanceStatus.late => ('Terlambat ${hm(att!.checkInAt)}${att.offlineTime ? ' · offline' : ''}', C.warningSoft, C.warning, Icons.watch_later_rounded),
-            AttendanceStatus.checkedOut => ('Pulang ${hm(att!.checkOutAt!)}${att.offlineTime ? ' · offline' : ''}', C.successSoft, C.success, Icons.logout_rounded),
-            AttendanceStatus.needsAttention => ('Perlu perhatian', C.errorSoft, C.error, Icons.error_outline_rounded),
-          };
+    // Satu chip status absensi. Data yang baru tersimpan di perangkat TIDAK ditampilkan sebagai berhasil;
+    // status koneksi server dibahas terpisah di kartu peringatan di bawah.
+    final (String chipText, Color chipBg, Color chipFg, IconData chipIcon) = att == null
+        ? ('Belum absen', C.warningSoft, C.warning, Icons.schedule_rounded)
+        : !att.synced
+            ? ('${done ? 'Pulang' : 'Masuk'} ${hm(att.checkOutAt ?? att.checkInAt)} · belum di server', C.accentSoft, C.ink, Icons.hourglass_top_rounded)
+            : switch (s.todayStatus) {
+                AttendanceStatus.late => ('Terlambat ${hm(att.checkInAt)}$deviceTime', C.warningSoft, C.warning, Icons.watch_later_rounded),
+                AttendanceStatus.checkedOut => ('Pulang ${hm(att.checkOutAt ?? att.checkInAt)}$deviceTime', C.successSoft, C.success, Icons.logout_rounded),
+                AttendanceStatus.needsAttention => ('Perlu perhatian', C.errorSoft, C.error, Icons.error_outline_rounded),
+                AttendanceStatus.pending => ('Menunggu sinkronisasi', C.accentSoft, C.ink, Icons.sync_rounded),
+                _ => ('Hadir ${hm(att.checkInAt)}$deviceTime', C.successSoft, C.success, Icons.check_circle_rounded),
+              };
 
-    final actionLabel = done ? 'Sudah absen pulang' : (canOut ? 'Absen pulang' : 'Absen masuk');
+    final actionLabel = done ? 'Absensi selesai' : (canOut ? 'Absen pulang' : 'Absen masuk');
     void open() => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CheckInScreen(isOut: canOut)));
 
     return Container(
@@ -171,7 +173,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ]),
         const SizedBox(height: S.x4),
-        _WeekRow(presence: s.weekPresence, todayIndex: now.weekday - 1),
+        _WeekRow(marks: _weekMarks(s, now), todayIndex: now.weekday - 1),
         const SizedBox(height: S.x4),
         SizedBox(
           height: 52,
@@ -190,6 +192,23 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ]),
     );
+  }
+
+  /// Status tiap hari minggu ini dari data absensi aktual (bukan sekadar ada/tidak ada).
+  List<_DayMark> _weekMarks(AppState s, DateTime now) {
+    final monday = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+    final byDay = {for (final a in s.attendance) a.day: a};
+    return List.generate(7, (i) {
+      final d = monday.add(Duration(days: i));
+      final a = byDay[dayKey(d)];
+      if (a != null) {
+        if (!a.synced) return _DayMark.pending;
+        return a.status == AttendanceStatus.late ? _DayMark.late : _DayMark.present;
+      }
+      if (i > now.weekday - 1) return _DayMark.future;
+      if (i == now.weekday - 1) return _DayMark.today;
+      return d.weekday >= DateTime.saturday ? _DayMark.off : _DayMark.missed;
+    });
   }
 
   // ---------------------------------------------------------------- Jadwal + Memories
@@ -256,7 +275,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _memoriesWidget(AppState s) {
     final m = s.memories.isEmpty ? null : s.memories.first;
-    final path = m?.photoPath;
     Widget placeholder(IconData icon) => ColoredBox(color: C.night, child: Center(child: Icon(icon, size: 34, color: C.onNight2)));
     return Semantics(
       button: true,
@@ -270,14 +288,17 @@ class _HomeScreenState extends State<HomeScreen> {
           onTap: () => m == null ? widget.onGoTo(2) : Navigator.of(context).push(MaterialPageRoute(builder: (_) => MemoryDetailScreen(id: m.id))),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Expanded(
-              child: path != null
-                  ? Image.file(File(path), fit: BoxFit.cover, cacheWidth: 400, gaplessPlayback: true, errorBuilder: (_, __, ___) => placeholder(Icons.broken_image_outlined))
+              child: m != null
+                  ? MemoryPhoto(memory: m, thumb: true, cacheWidth: 400, compact: true, placeholderColor: C.night)
                   : placeholder(Icons.photo_camera_outlined),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(S.x3, S.x2, S.x3, S.x3),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Memories', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: C.onNight2)),
+                Row(children: [
+                  Expanded(child: Text(m == null ? 'Memories' : hm(m.capturedAt), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: C.onNight2))),
+                  if (m != null) Icon(photoStatusOf(m).icon, size: 14, color: photoStatusOf(m).bg), // status foto: cloud / belum / gagal
+                ]),
                 Text(m == null ? 'Belum ada dokumentasi' : m.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: C.onNight)),
               ]),
             ),
@@ -293,30 +314,50 @@ class _HomeScreenState extends State<HomeScreen> {
     final r = s.nextReminder;
     return _Pill(
       icon: _reminderIcon(r?.type),
-      text: r == null ? 'Tidak ada pengingat tersisa hari ini' : '${r.title} · ${minToHm(r.atMin)}',
+      text: r == null ? 'Tidak ada pengingat tersisa hari ini' : 'Berikutnya: ${r.title} · ${minToHm(r.atMin)}',
       semantics: r == null ? 'Pengingat: tidak ada yang tersisa hari ini' : 'Pengingat berikutnya: ${r.title}, pukul ${minToHm(r.atMin)}',
       onTap: () => _push(const RemindersScreen()),
+      compact: true,
     );
   }
 
-  /// Petunjuk status penyimpanan online (offline / belum masuk / antrean).
-  List<Widget> _syncHint(AppState s) {
-    String? text;
-    VoidCallback? onTap;
+  /// Peringatan konfigurasi/sinkronisasi. Terpisah dari pengingat biasa, menjelaskan dampaknya,
+  /// dan selalu punya satu tindakan.
+  List<Widget> _serverAlert(BuildContext context, AppState s) {
+    final att = s.today;
+    String? title;
+    String? body;
+    String? action;
+    VoidCallback? onAction;
     if (!s.backendConfigured) {
-      text = 'Server belum dikonfigurasi · absensi hanya di perangkat';
-      onTap = () => _push(const SettingsScreen());
+      title = 'Server belum dikonfigurasi';
+      body = att != null
+          ? 'Absensi hari ini baru tersimpan di perangkat. Guru belum bisa melihatnya dan foto tidak dapat diunggah ke Google Drive.'
+          : 'Absensi hanya akan tersimpan di perangkat dan foto tidak dapat diunggah ke Google Drive.';
+      action = 'Lihat panduan';
+      onAction = () => _push(const SettingsScreen());
     } else if (!s.signedIn) {
-      text = 'Masuk agar absensi tersimpan online';
-      onTap = () => _push(const AuthScreen());
+      title = 'Belum masuk akun';
+      body = att != null
+          ? 'Absensi hari ini menunggu dikirim ke server. Masuk agar tercatat dan foto bisa diunggah.'
+          : 'Masuk agar absensi tersimpan di server dan foto bisa diunggah ke Google Drive.';
+      action = 'Masuk';
+      onAction = () => _push(const AuthScreen());
     } else if (s.sync.pending > 0) {
-      text = '${s.sync.pending} item menunggu sinkronisasi · ketuk untuk coba lagi';
-      onTap = () => s.sync.retryPending();
+      title = '${s.sync.pending} item menunggu sinkronisasi';
+      body = 'Data akan dikirim otomatis saat koneksi tersedia.';
+      action = 'Coba lagi';
+      onAction = () => s.sync.retryPending();
+    } else if (s.photosPendingUpload.isNotEmpty) {
+      title = '${s.photosPendingUpload.length} foto lama belum di Drive';
+      body = 'Foto masih berupa berkas di perangkat dan baru dihapus setelah unggahan terkonfirmasi.';
+      action = 'Pindahkan';
+      onAction = () => s.migrateLegacyPhotos();
     }
-    if (text == null) return const [];
+    if (title == null) return const [];
     return [
-      const SizedBox(height: S.x2),
-      _Pill(icon: Icons.cloud_off_outlined, text: text, semantics: text, onTap: onTap, bg: C.warningSoft, fg: C.ink, iconColor: C.warning),
+      const SizedBox(height: S.x3),
+      _AlertCard(title: title, body: body!, action: action!, onAction: onAction!),
     ];
   }
 
@@ -507,7 +548,8 @@ class _Pill extends StatelessWidget {
   final Color bg;
   final Color fg;
   final Color iconColor;
-  const _Pill({required this.icon, required this.text, required this.semantics, this.onTap, this.bg = C.nightSurface, this.fg = C.onNight, this.iconColor = C.accent});
+  final bool compact;
+  const _Pill({required this.icon, required this.text, required this.semantics, this.onTap, this.bg = C.nightSurface, this.fg = C.onNight, this.iconColor = C.accent, this.compact = false});
   @override
   Widget build(BuildContext context) => Semantics(
         button: onTap != null,
@@ -520,13 +562,13 @@ class _Pill extends StatelessWidget {
           child: InkWell(
             onTap: onTap,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 52),
+              constraints: BoxConstraints(minHeight: compact ? 48 : 52),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: S.x4, vertical: S.x2),
                 child: Row(children: [
                   Icon(icon, size: 20, color: iconColor),
                   const SizedBox(width: S.x3),
-                  Expanded(child: Text(text, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: fg))),
+                  Expanded(child: Text(text, maxLines: compact ? 1 : 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 13 : 13.5, fontWeight: FontWeight.w600, color: fg))),
                   if (onTap != null) Icon(Icons.chevron_right_rounded, size: 20, color: fg),
                 ]),
               ),
@@ -536,31 +578,88 @@ class _Pill extends StatelessWidget {
       );
 }
 
+enum _DayMark { present, late, pending, missed, today, future, off }
+
 class _WeekRow extends StatelessWidget {
-  final List<bool> presence;
+  final List<_DayMark> marks;
   final int todayIndex;
-  const _WeekRow({required this.presence, required this.todayIndex});
+  const _WeekRow({required this.marks, required this.todayIndex});
+
+  static String _label(_DayMark m) => switch (m) {
+        _DayMark.present => 'hadir',
+        _DayMark.late => 'terlambat',
+        _DayMark.pending => 'tercatat di perangkat, belum di server',
+        _DayMark.missed => 'tidak ada absensi',
+        _DayMark.today => 'belum absen',
+        _DayMark.future => 'belum tiba',
+        _DayMark.off => 'akhir pekan',
+      };
 
   @override
   Widget build(BuildContext context) => Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         for (var i = 0; i < 7; i++)
           Semantics(
-            label: '${kDays[i]}: ${presence[i] ? 'hadir' : (i > todayIndex ? 'belum' : 'tidak ada absensi')}',
+            label: '${kDays[i]}: ${_label(marks[i])}',
             excludeSemantics: true,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: presence[i] ? C.accent : Colors.transparent,
-                  border: presence[i] ? null : Border.all(color: i == todayIndex ? C.onNight : C.onNight2.withValues(alpha: .5), width: i == todayIndex ? 2 : 1),
-                ),
-                child: presence[i] ? const Icon(Icons.check_rounded, size: 18, color: C.ink) : null,
-              ),
+              _dot(marks[i], i == todayIndex),
               const SizedBox(height: S.x1),
               Text(kDaysShort[i], style: TextStyle(fontSize: 11, color: i == todayIndex ? C.onNight : C.onNight2, fontWeight: i == todayIndex ? FontWeight.w800 : FontWeight.w400)),
             ]),
           ),
       ]);
+
+  Widget _dot(_DayMark m, bool isToday) {
+    Widget circle({Color? fill, Color? border, double bw = 1, IconData? icon, Color? iconColor}) => Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: fill, border: border == null ? null : Border.all(color: border, width: bw)),
+          child: icon == null ? null : Icon(icon, size: 17, color: iconColor),
+        );
+    return switch (m) {
+      _DayMark.present => circle(fill: C.accent, icon: Icons.check_rounded, iconColor: C.ink),
+      _DayMark.late => circle(fill: C.warningSoft, icon: Icons.watch_later_rounded, iconColor: C.warning),
+      _DayMark.pending => circle(border: C.accent, bw: 2, icon: Icons.hourglass_top_rounded, iconColor: C.accent),
+      _DayMark.missed => circle(border: C.onNight2.withValues(alpha: .5), icon: Icons.remove_rounded, iconColor: C.onNight2),
+      _DayMark.today => circle(border: C.onNight, bw: 2),
+      _DayMark.future => circle(border: C.onNight2.withValues(alpha: .25)),
+      _DayMark.off => circle(border: C.onNight2.withValues(alpha: .25)),
+    };
+  }
+}
+
+class _AlertCard extends StatelessWidget {
+  final String title;
+  final String body;
+  final String action;
+  final VoidCallback onAction;
+  const _AlertCard({required this.title, required this.body, required this.action, required this.onAction});
+  @override
+  Widget build(BuildContext context) => Semantics(
+        container: true,
+        label: 'Peringatan: $title. $body',
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(S.x4, S.x3, S.x2, S.x2),
+          decoration: BoxDecoration(color: C.warningSoft, borderRadius: BorderRadius.circular(R.small)),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Padding(padding: EdgeInsets.only(top: 2), child: Icon(Icons.cloud_off_outlined, size: 20, color: C.warning)),
+            const SizedBox(width: S.x3),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: C.ink)),
+                const SizedBox(height: 2),
+                Text(body, style: const TextStyle(fontSize: 12.5, color: C.text, height: 1.3)),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: onAction,
+                    style: TextButton.styleFrom(foregroundColor: C.ink, minimumSize: const Size(48, 48)),
+                    child: Text(action, style: const TextStyle(fontWeight: FontWeight.w800)),
+                  ),
+                ),
+              ]),
+            ),
+          ]),
+        ),
+      );
 }

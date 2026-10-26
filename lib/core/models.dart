@@ -38,7 +38,8 @@ class Reminder {
       Reminder(id: j['id'], title: j['title'], detail: j['detail'], type: j['type'], atMin: j['at'], enabled: j['enabled']);
 }
 
-enum UploadStatus { pending, uploaded, failed }
+/// Urutan enum disimpan sebagai indeks di data lama: nilai baru hanya boleh ditambah di akhir.
+enum UploadStatus { pending, uploaded, failed, uploading }
 
 class Memory {
   final String id;
@@ -55,16 +56,37 @@ class Memory {
   String description;
   UploadStatus upload;
   String? driveUrl;
-  Memory({required this.id, required this.title, this.scheduleId, this.photoPath, required this.capturedAt, this.takenAt, this.lat, this.lng, this.accuracy, this.placeName, this.description = '', this.upload = UploadStatus.pending, this.driveUrl});
+  /// ID file Drive (referensi stabil). Data lama hanya punya [driveUrl]; ID diturunkan dari URL itu.
+  String? driveFileId;
+  /// Pesan kegagalan unggah terakhir (untuk ditampilkan, bukan kode mentah).
+  String? uploadError;
+  Memory({required this.id, required this.title, this.scheduleId, this.photoPath, required this.capturedAt, this.takenAt, this.lat, this.lng, this.accuracy, this.placeName, this.description = '', this.upload = UploadStatus.pending, this.driveUrl, this.driveFileId, this.uploadError});
   String get meta => '${capturedAt.day} ${kMonths[capturedAt.month - 1].substring(0, 3)} · ${hm(capturedAt)} WIB';
   Map<String, dynamic> toJson() => {
         'id': id, 'title': title, 'scheduleId': scheduleId, 'photo': photoPath, 'at': capturedAt.toIso8601String(), 'taken': takenAt?.toIso8601String(),
-        'lat': lat, 'lng': lng, 'acc': accuracy, 'place': placeName, 'desc': description, 'upload': upload.index, 'drive': driveUrl,
+        'lat': lat, 'lng': lng, 'acc': accuracy, 'place': placeName, 'desc': description, 'upload': upload.index, 'drive': driveUrl, 'driveId': driveFileId, 'uploadErr': uploadError,
       };
   factory Memory.fromJson(Map<String, dynamic> j) => Memory(
       id: j['id'], title: j['title'], scheduleId: j['scheduleId'], photoPath: j['photo'], capturedAt: DateTime.parse(j['at']),
       takenAt: j['taken'] == null ? null : DateTime.tryParse(j['taken']),
-      lat: (j['lat'] as num?)?.toDouble(), lng: (j['lng'] as num?)?.toDouble(), accuracy: (j['acc'] as num?)?.toDouble(), placeName: j['place'], description: j['desc'] ?? '', upload: UploadStatus.values[j['upload'] ?? 0], driveUrl: j['drive']);
+      lat: (j['lat'] as num?)?.toDouble(), lng: (j['lng'] as num?)?.toDouble(), accuracy: (j['acc'] as num?)?.toDouble(), placeName: j['place'], description: j['desc'] ?? '', upload: _status(j['upload']), driveUrl: j['drive'], driveFileId: j['driveId'] ?? _idFromUrl(j['drive']), uploadError: j['uploadErr']);
+
+  /// 'uploading' yang tersimpan berarti aplikasi mati saat mengunggah: anggap belum selesai.
+  static UploadStatus _status(dynamic raw) {
+    final i = raw is int ? raw : 0;
+    final v = i >= 0 && i < UploadStatus.values.length ? UploadStatus.values[i] : UploadStatus.pending;
+    return v == UploadStatus.uploading ? UploadStatus.pending : v;
+  }
+
+  static String? _idFromUrl(dynamic url) {
+    if (url is! String) return null;
+    return RegExp(r'/d/([A-Za-z0-9_-]+)').firstMatch(url)?.group(1);
+  }
+
+  /// Foto ada di Drive dan dikonfirmasi server.
+  bool get inCloud => upload == UploadStatus.uploaded && driveFileId != null;
+  /// Masih ada berkas foto lokal yang belum terkonfirmasi di Drive (termasuk foto versi lama).
+  bool get hasLocalPhoto => photoPath != null;
 }
 
 enum AttendanceStatus { notCheckedIn, pending, present, late, checkedOut, needsAttention }

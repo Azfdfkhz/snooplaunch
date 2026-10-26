@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthChangeEvent;
+import '../services/backend_service.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import '../main.dart';
@@ -19,9 +22,27 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _hide = true;
   String? _message;
   bool _ok = false;
+  StreamSubscription? _authSub;
+
+  @override
+  void initState() {
+    super.initState();
+    // Setelah tautan konfirmasi email membuka aplikasi, sesi terbentuk otomatis: tutup layar ini.
+    if (BackendService.instance.initError == null) {
+      try {
+        _authSub = BackendService.instance.authChanges.listen((st) {
+          if (st.event == AuthChangeEvent.signedIn && mounted && Navigator.of(context).canPop()) {
+            AppScope.of(context).sync.retryPending();
+            Navigator.of(context).pop();
+          }
+        });
+      } catch (_) {}
+    }
+  }
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _email.dispose();
     _pass.dispose();
     super.dispose();

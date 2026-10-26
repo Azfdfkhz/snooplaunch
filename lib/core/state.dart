@@ -8,6 +8,8 @@ import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 import 'package:uuid/uuid.dart';
 import 'models.dart';
 import '../services/backend_service.dart';
+import '../services/capture_service.dart';
+import '../services/cloud_photo_service.dart';
 import '../services/notification_service.dart';
 import '../services/sync_service.dart';
 
@@ -100,8 +102,6 @@ class AppState extends ChangeNotifier {
   /// menahan tampilan pertama (izin notifikasi dan jaringan bisa lambat).
   Future<void> startBackground() async {
     sync.onAttendanceApplied = _applyAttendance;
-    sync.onMemoryUploaded = _memoryUploaded;
-    sync.onMemoryUploadFailed = _memoryUploadFailed;
     sync.onStatusChanged = notifyListeners;
     try { await BackendService.instance.initialize(); } catch (_) {}
     if (BackendService.instance.configured) {
@@ -109,11 +109,15 @@ class AppState extends ChangeNotifier {
         _authSub = BackendService.instance.authChanges.listen((_) {
           notifyListeners();
           sync.retryPending();
+          unawaited(migrateLegacyPhotos());
         });
       } catch (_) {}
       try {
         _connSub = Connectivity().onConnectivityChanged.listen((r) {
-          if (!r.contains(ConnectivityResult.none)) sync.retryPending();
+          if (!r.contains(ConnectivityResult.none)) {
+            sync.retryPending();
+            unawaited(migrateLegacyPhotos());
+          }
         });
       } catch (_) {}
     }
@@ -131,6 +135,7 @@ class AppState extends ChangeNotifier {
       // Data lokal tetap berfungsi bila izin notifikasi tidak tersedia.
     }
     await sync.retryPending();
+    unawaited(migrateLegacyPhotos());
   }
 
   @override
@@ -174,6 +179,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> signOut() async {
     try { await BackendService.instance.signOut(); } catch (_) {}
+    await CloudPhotoService.instance.clearAll(); // cache foto cloud tidak boleh tertinggal setelah keluar akun
     notifyListeners();
   }
 
@@ -194,21 +200,6 @@ class AppState extends ChangeNotifier {
     };
     a.offlineTime = row['time_source'] == 'device_queued' || row['check_out_time_source'] == 'device_queued';
     a.synced = a.checkOutAt == null || out != null;
-    changed();
-  }
-
-  void _memoryUploaded(String id, String? url) {
-    final m = memories.where((e) => e.id == id).firstOrNull;
-    if (m == null) return;
-    m.upload = UploadStatus.uploaded;
-    m.driveUrl = url;
-    changed();
-  }
-
-  void _memoryUploadFailed(String id) {
-    final m = memories.where((e) => e.id == id).firstOrNull;
-    if (m == null || m.upload == UploadStatus.uploaded) return;
-    m.upload = UploadStatus.failed;
     changed();
   }
 
@@ -309,16 +300,195 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
-  void addMemory(Memory m) { memories.insert(0, m); changed(); sync.pushMemory(m).catchError((_) {}); }
+  // ---------------------------------------------------------------- Foto dokumentasi (Google Drive)
+  //
+  // Kebijakan: foto tidak disimpan permanen di perangkat. Berkas kamera bersifat sementara; setelah server
+  // mengonfirmasi file ada di Drive, referensi lokal (photoPath) dikosongkan dan berkasnya dihapus.
+  // Foto tidak pernah masuk antrean sinkronisasi; hanya metadata yang diantre.
+
+  /// Dokumentasi yang dibuat pada sesi ini (ditangani layar hasil absensi, bukan migrasi foto lama).
+  final Set<String> _fresh = {};
+  /// Berkas yang harus dihapus begitu unggahan yang sedang berjalan selesai/gagal (layar sudah ditutup).
+  final Set<String> _discardWhenDone = {};
+  bool _migrating = false;
+  bool _lastUploadOffline = false;
+
+  bool get photoUploadReady => backendConfigured && signedIn;
+
+  Memory? memoryById(String id) => memories.where((m) => m.id == id).firstOrNull;
+
+  /// Foto yang masih berupa berkas lokal dan belum terkonfirmasi di Drive (termasuk foto versi lama).
+  List<Memory> get photosPendingUpload =>
+      memories.where((m) => m.hasLocalPhoto && !m.inCloud && !_fresh.contains(m.id) && m.upload != UploadStatus.uploading).toList();
+
+  /// Dokumentasi tanpa foto yang bisa dipakai dan belum ada di Drive.
+  int get photosLost => memories.where((m) => !m.hasLocalPhoto && !m.inCloud && m.upload != UploadStatus.uploading).length;
+
+  void addMemory(Memory m) {
+    _fresh.add(m.id);
+    memories.insert(0, m);
+    changed();
+    sync.pushMemory(m).catchError((_) {}); // metadata saja
+  }
+
+  void _failUpload(Memory m, String message, {required bool keepLocal, bool offline = false, bool localGone = false}) {
+    m.upload = UploadStatus.failed;
+    m.uploadError = message;
+    _lastUploadOffline = offline;
+    final path = m.photoPath;
+    final drop = localGone || !keepLocal || _discardWhenDone.remove(m.id);
+    if (drop && path != null) {
+      m.photoPath = null; // jangan menyimpan path yang berkasnya sudah dihapus
+      CaptureService.discard(path);
+    }
+    changed();
+  }
+
+  /// Mengunggah foto ke Drive. Berkas lokal HANYA dihapus setelah server mengonfirmasi file ada di Drive.
+  /// [keepLocalOnFailure]: true untuk layar hasil (masih bisa coba lagi) dan migrasi foto lama
+  /// (jangan menghapus satu-satunya salinan). Mengembalikan true bila sudah terkonfirmasi di Drive.
+  Future<bool> uploadMemoryPhoto(String id, {bool keepLocalOnFailure = true}) async {
+    final m = memoryById(id);
+    if (m == null) return false;
+    if (m.inCloud && !m.hasLocalPhoto) return true;
+    if (m.upload == UploadStatus.uploading) return false; // cegah unggahan ganda
+    if (m.photoPath == null) {
+      _failUpload(m, 'Foto tidak tersedia di perangkat. Ambil foto baru.', keepLocal: false);
+      return false;
+    }
+    if (!photoUploadReady) {
+      _failUpload(m, backendConfigured ? 'Belum masuk. Masuk di Pengaturan agar foto bisa diunggah.' : 'Server belum dikonfigurasi, foto tidak dapat diunggah.',
+          keepLocal: keepLocalOnFailure);
+      return false;
+    }
+    m.upload = UploadStatus.uploading;
+    m.uploadError = null;
+    changed();
+    try {
+      await BackendService.instance.syncMemory(m); // baris metadata harus ada sebelum unggah
+      final ref = await BackendService.instance.uploadPhoto(m);
+      final path = m.photoPath;
+      m.driveFileId = ref.fileId;
+      m.driveUrl = ref.url;
+      m.upload = UploadStatus.uploaded;
+      m.uploadError = null;
+      m.photoPath = null; // sumber foto sekarang cloud
+      _discardWhenDone.remove(id);
+      changed(); // simpan state dulu, baru hapus berkas
+      if (path != null) await CaptureService.discard(path);
+      CloudPhotoService.instance.remove(id); // buang cache lama bila ada
+      return true;
+    } on BackendException catch (e) {
+      _failUpload(m, e.message, keepLocal: keepLocalOnFailure, offline: e.offline, localGone: e.code == 'local_missing');
+      return false;
+    } catch (_) {
+      _failUpload(m, 'Foto gagal diunggah. Coba lagi.', keepLocal: keepLocalOnFailure);
+      return false;
+    }
+  }
+
+  /// Dipanggil saat layar hasil ditutup: foto yang gagal diunggah tidak dipertahankan sebagai fallback permanen.
+  void discardLocalPhoto(String id) {
+    final m = memoryById(id);
+    _fresh.remove(id);
+    if (m == null || m.inCloud) return;
+    if (m.upload == UploadStatus.uploading) {
+      _discardWhenDone.add(id); // dihapus oleh _failUpload bila unggahan gagal
+      return;
+    }
+    final path = m.photoPath;
+    if (path == null) return;
+    m.photoPath = null;
+    m.upload = UploadStatus.failed;
+    m.uploadError ??= 'Foto tidak diunggah dan sudah dihapus dari perangkat. Ambil foto baru saat koneksi tersedia.';
+    CaptureService.discard(path);
+    changed();
+  }
+
+  /// Migrasi foto versi lama: unggah yang belum terunggah, lalu hapus salinan lokal hanya setelah dikonfirmasi.
+  /// Gagal = berkas lama dibiarkan; tidak ada penghapusan massal.
+  Future<void> migrateLegacyPhotos() async {
+    if (_migrating || !photoUploadReady) return;
+    _migrating = true;
+    try {
+      for (final m in photosPendingUpload) {
+        final path = m.photoPath;
+        if (path == null) continue;
+        final exists = await File(path).exists();
+        if (m.upload == UploadStatus.uploaded && m.driveFileId != null) {
+          // Sudah punya referensi Drive: konfirmasi ke server sebelum menghapus salinan lokal.
+          try {
+            final ref = await BackendService.instance.verifyPhoto(m.id);
+            if (ref != null) {
+              m.photoPath = null;
+              m.driveFileId = ref.fileId;
+              changed();
+              await CaptureService.discard(path);
+              continue;
+            }
+          } on BackendException catch (e) {
+            if (e.offline) break; // tidak bisa memastikan: jangan hapus apa pun
+            continue;
+          }
+          if (!exists) {
+            m.upload = UploadStatus.failed;
+            m.driveFileId = null;
+            m.photoPath = null;
+            m.uploadError = 'Foto lama tidak ditemukan di Drive maupun di perangkat.';
+            changed();
+            continue;
+          }
+          m.upload = UploadStatus.pending; // file Drive hilang, berkas lokal masih ada: unggah ulang
+          m.driveFileId = null;
+          m.driveUrl = null;
+        } else if (!exists) {
+          m.photoPath = null;
+          m.upload = UploadStatus.failed;
+          m.uploadError = 'Foto lama tidak ditemukan di perangkat dan belum pernah terunggah.';
+          changed();
+          continue;
+        }
+        final ok = await uploadMemoryPhoto(m.id, keepLocalOnFailure: true);
+        if (!ok && _lastUploadOffline) break;
+      }
+    } finally {
+      _migrating = false;
+    }
+  }
+
+  /// Menghapus dokumentasi beserta file Drive-nya. Mengembalikan null bila selesai, atau pesan kesalahan bila
+  /// penghapusan di cloud gagal; dalam kasus itu dokumentasi TETAP ada agar bisa dicoba lagi dan UI tidak
+  /// menyatakan foto sudah terhapus.
+  Future<String?> removeMemory(String id) async {
+    final m = memoryById(id);
+    if (m == null) return null;
+    if (m.upload == UploadStatus.uploading) return 'Foto sedang diunggah. Tunggu sampai selesai, lalu hapus.';
+    if (photoUploadReady) {
+      try {
+        await BackendService.instance.deleteRemote(id); // idempoten
+      } on BackendException catch (e) {
+        return e.offline ? 'Tidak ada koneksi. Dokumentasi belum dihapus dari cloud; coba lagi saat online.' : 'Gagal menghapus di cloud: ${e.message}';
+      } catch (_) {
+        return 'Gagal menghapus di cloud. Coba lagi.';
+      }
+    } else if (m.inCloud || m.upload == UploadStatus.uploaded) {
+      return 'Masuk dan hubungkan ke internet untuk menghapus foto dari Google Drive.';
+    }
+    await sync.forgetMemory(id);
+    deleteMemory(id);
+    return null;
+  }
+
+  /// Menghapus dokumentasi dari perangkat (tanpa menyentuh cloud). Gunakan [removeMemory] dari UI.
   void deleteMemory(String id) {
     final matches = memories.where((m) => m.id == id).toList();
     memories.removeWhere((m) => m.id == id);
+    _fresh.remove(id);
     changed();
+    CloudPhotoService.instance.remove(id);
     for (final m in matches) {
       final path = m.photoPath;
-      if (path != null) {
-        () async { try { if (await File(path).exists()) await File(path).delete(); } catch (_) {} }();
-      }
+      if (path != null) CaptureService.discard(path);
     }
   }
 

@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/env.dart';
@@ -42,8 +44,16 @@ class BackendService {
   Future<AuthResponse> signIn(String email, String password) =>
       client.auth.signInWithPassword(email: email.trim(), password: password);
 
+  /// Tautan konfirmasi email membuka aplikasi lewat deep link ini (bukan localhost).
+  /// Harus sama dengan Redirect URL di Supabase > Authentication > URL Configuration.
+  static const authRedirectUrl = 'com.snoop.snoop://login-callback';
+
   Future<AuthResponse> signUp(String email, String password) =>
-      client.auth.signUp(email: email.trim(), password: password);
+      client.auth.signUp(email: email.trim(), password: password, emailRedirectTo: authRedirectUrl);
+
+  /// Kirim ulang email konfirmasi (tautan lama masih mengarah ke localhost:3000).
+  Future<void> resendConfirmation(String email) =>
+      client.auth.resend(type: OtpType.signup, email: email.trim(), emailRedirectTo: authRedirectUrl);
 
   Future<void> signOut() => client.auth.signOut();
 
@@ -92,26 +102,111 @@ class BackendService {
     }, onConflict: 'id');
   }
 
-  /// Unggah foto ke Google Drive lewat Edge Function `drive-upload` (kredensial Google
-  /// hanya ada di server). Mengembalikan {drive_file_id, drive_file_url}.
-  Future<Map<String, dynamic>> uploadPhoto(Memory m) async {
+  // ---------------------------------------------------------------- Foto di Google Drive
+  // Semua akses Drive lewat Edge Function; aplikasi tidak memegang kredensial Google.
+
+  static const maxPhotoBytes = 5 * 1024 * 1024;
+
+  Future<Map<String, dynamic>> _fn(String name, Map<String, dynamic> body, {Duration timeout = const Duration(seconds: 60)}) async {
+    try {
+      final res = await client.functions.invoke(name, body: body).timeout(timeout);
+      final data = res.data;
+      if (data is! Map) throw const BackendException('Respons server tidak valid.');
+      return Map<String, dynamic>.from(data);
+    } on BackendException {
+      rethrow;
+    } on FunctionException catch (e) {
+      final d = e.details;
+      final code = d is Map ? d['error']?.toString() : null;
+      throw BackendException(_explain(code, e.status), code: code, status: e.status);
+    } on TimeoutException {
+      throw const BackendException('Server terlalu lama merespons. Coba lagi.', offline: true);
+    } on SocketException {
+      throw const BackendException('Tidak ada koneksi internet.', offline: true);
+    } catch (e) {
+      final t = e.toString();
+      if (t.contains('SocketException') || t.contains('ClientException') || t.contains('Failed host lookup')) {
+        throw const BackendException('Tidak ada koneksi internet.', offline: true);
+      }
+      throw BackendException('Permintaan ke server gagal.');
+    }
+  }
+
+  static String _explain(String? code, int status) => switch (code) {
+        'unauthorized' => 'Sesi berakhir. Masuk lagi di Pengaturan.',
+        'drive_not_configured' => 'Google Drive belum dikonfigurasi di server. Lihat panduan di Pengaturan > Sinkronisasi.',
+        'google_token_error' => 'Server tidak dapat masuk ke Google Drive. Refresh token perlu dibuat ulang.',
+        'file_too_large' => 'Foto lebih dari 5 MB.',
+        'unsupported_mime' => 'Format foto tidak didukung (hanya JPEG/PNG).',
+        'memory_not_found' => 'Catatan dokumentasi belum ada di server. Coba sinkronkan dulu.',
+        'upload_in_progress' => 'Unggahan sebelumnya masih berjalan. Tunggu sebentar, lalu coba lagi.',
+        'verify_failed' => 'File di Drive tidak lolos pemeriksaan. Coba unggah lagi.',
+        'drive_error' => 'Google Drive menolak permintaan. Coba lagi nanti.',
+        'file_not_found' => 'File foto tidak ditemukan di Drive.',
+        'not_uploaded' => 'Foto belum terunggah.',
+        _ => status == 401 ? 'Sesi berakhir. Masuk lagi di Pengaturan.' : 'Server menolak permintaan (${code ?? status}).',
+      };
+
+  static bool _isJpegOrPng(List<int> b) =>
+      (b.length > 3 && b[0] == 0xff && b[1] == 0xd8 && b[2] == 0xff) ||
+      (b.length > 8 && b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4e && b[3] == 0x47);
+
+  PhotoRef _ref(Map<String, dynamic> d) {
+    // `confirmed` hanya dikirim server setelah file dibaca ulang dari Drive dan baris database tersimpan.
+    final id = d['drive_file_id'];
+    if (d['confirmed'] != true || id is! String || id.isEmpty) {
+      throw const BackendException('Server belum mengonfirmasi bahwa foto tersimpan di Drive.');
+    }
+    return PhotoRef(id, d['drive_file_url'] as String?, (d['size'] as num?)?.toInt() ?? 0);
+  }
+
+  /// Mengunggah foto dan baru mengembalikan hasil bila server mengonfirmasi. Idempoten di server.
+  /// Tidak menghapus apa pun; penghapusan berkas lokal adalah tanggung jawab pemanggil setelah hasil ini diterima.
+  Future<PhotoRef> uploadPhoto(Memory m) async {
     final path = m.photoPath;
-    if (path == null) throw StateError('Tidak ada foto.');
+    if (path == null) throw const BackendException('Tidak ada foto untuk diunggah.');
     final f = File(path);
-    if (!await f.exists()) throw StateError('File foto tidak ditemukan di perangkat.');
+    if (!await f.exists()) throw const BackendException('Berkas foto sudah tidak ada di perangkat.', code: 'local_missing');
     final bytes = await f.readAsBytes();
-    if (bytes.length > 5 * 1024 * 1024) throw StateError('Foto lebih dari 5 MB.');
+    if (bytes.isEmpty || !_isJpegOrPng(bytes)) throw const BackendException('Berkas foto tidak valid (bukan JPEG/PNG).');
+    if (bytes.length > maxPhotoBytes) throw const BackendException('Foto lebih dari 5 MB.');
     final stamp = m.capturedAt.toIso8601String().replaceAll(RegExp(r'[^0-9]'), '');
-    final res = await client.functions.invoke('drive-upload', body: {
+    final data = await _fn('drive-upload', {
+      'mode': 'upload',
       'memory_id': m.id,
       'file_name': 'snoop_$stamp.jpg',
-      'mime_type': 'image/jpeg',
+      'mime_type': bytes[0] == 0x89 ? 'image/png' : 'image/jpeg',
       'data_base64': base64Encode(bytes),
-    });
-    final data = res.data;
-    if (data is! Map || data['drive_file_id'] == null) throw StateError('Respons upload tidak valid.');
-    return Map<String, dynamic>.from(data);
+    }, timeout: const Duration(seconds: 90));
+    return _ref(data);
   }
+
+  /// Memeriksa bahwa file Drive untuk dokumentasi ini masih ada. Null bila belum pernah terunggah / sudah hilang.
+  Future<PhotoRef?> verifyPhoto(String memoryId) async {
+    try {
+      return _ref(await _fn('drive-upload', {'mode': 'verify', 'memory_id': memoryId}));
+    } on BackendException catch (e) {
+      if (e.code == 'not_uploaded') return null;
+      rethrow;
+    }
+  }
+
+  /// Mengambil foto dari Drive (privat) lewat server. [thumb] meminta versi kecil bila tersedia.
+  Future<Uint8List> fetchPhoto(String memoryId, {bool thumb = false}) async {
+    final d = await _fn('drive-photo', {'memory_id': memoryId, 'thumb': thumb}, timeout: const Duration(seconds: 45));
+    final b64 = d['data_base64'];
+    if (b64 is! String || b64.isEmpty) throw const BackendException('Respons foto tidak valid.');
+    return base64Decode(b64);
+  }
+
+  /// Menghapus file Drive lalu baris database. Idempoten. Melempar bila file Drive gagal dihapus.
+  Future<void> deleteRemote(String memoryId) async {
+    final d = await _fn('drive-delete', {'memory_id': memoryId});
+    if (d['deleted'] != true) throw const BackendException('Server belum mengonfirmasi penghapusan.');
+  }
+
+  /// Status konfigurasi Drive di server (tanpa membuka rahasia). {configured, reachable?, missing?}
+  Future<Map<String, dynamic>> driveStatus() => _fn('drive-upload', {'mode': 'status'}, timeout: const Duration(seconds: 25));
 
   String? _uuidOrNull(String? value) {
     if (value == null) return null;
@@ -149,4 +244,22 @@ class PendingSyncQueue {
   }
 
   Future<void> clear() async => (await SharedPreferences.getInstance()).remove(_key);
+}
+
+class PhotoRef {
+  final String fileId;
+  final String? url;
+  final int size;
+  const PhotoRef(this.fileId, this.url, this.size);
+}
+
+class BackendException implements Exception {
+  final String message;
+  final String? code;
+  final int? status;
+  /// True bila penyebabnya koneksi (bukan penolakan server).
+  final bool offline;
+  const BackendException(this.message, {this.code, this.status, this.offline = false});
+  @override
+  String toString() => message;
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import '../main.dart';
+import '../services/backend_service.dart';
 import '../services/launcher_service.dart';
 import '../services/notification_service.dart';
 import 'auth_screen.dart';
@@ -104,6 +105,23 @@ class _SyncCard extends StatefulWidget {
 
 class _SyncCardState extends State<_SyncCard> {
   bool _busy = false;
+  bool _driveBusy = false;
+  Map<String, dynamic>? _drive;
+  String? _driveErr;
+
+  Future<void> _checkDrive() async {
+    setState(() { _driveBusy = true; _driveErr = null; });
+    try {
+      final d = await BackendService.instance.driveStatus();
+      if (mounted) setState(() => _drive = d);
+    } on BackendException catch (e) {
+      if (mounted) setState(() { _drive = null; _driveErr = e.message; });
+    } catch (_) {
+      if (mounted) setState(() { _drive = null; _driveErr = 'Pemeriksaan Drive gagal.'; });
+    } finally {
+      if (mounted) setState(() => _driveBusy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -126,7 +144,39 @@ class _SyncCardState extends State<_SyncCard> {
             c: s.signedIn ? C.success : C.warning),
         line(Icons.sync, 'Antrean sinkronisasi: ${s.sync.pending} item'),
         if (err != null) line(Icons.report_gmailerrorred_outlined, 'Error terakhir: $err', c: C.error),
+        const Divider(height: 20),
+        // Foto: status terpisah dari sinkronisasi metadata. Metadata tersinkron tidak berarti foto sudah di Drive.
+        line(Icons.cloud_done_outlined, 'Foto di Google Drive: ${s.memories.where((m) => m.inCloud && !m.hasLocalPhoto).length} dokumentasi'),
+        if (s.photosPendingUpload.isNotEmpty)
+          line(Icons.cloud_off_outlined, '${s.photosPendingUpload.length} foto lama masih di perangkat dan belum dikonfirmasi di Drive', c: C.warning),
+        if (s.photosLost > 0)
+          line(Icons.error_outline, '${s.photosLost} dokumentasi tanpa foto (unggah gagal atau berkas hilang)', c: C.error),
+        if (_driveErr != null) line(Icons.error_outline, _driveErr!, c: C.error),
+        if (_drive != null && _drive!['configured'] != true)
+          line(Icons.error_outline, 'Google Drive belum dikonfigurasi di server (kurang: ${(_drive!['missing'] as List?)?.join(', ') ?? 'secrets'}). Ikuti supabase/SETUP.md bagian 2, lalu periksa lagi.', c: C.error)
+        else if (_drive != null && _drive!['reachable'] != true)
+          line(Icons.error_outline, 'Secrets Drive terisi, tetapi server tidak bisa masuk ke Google (${_drive!['error'] ?? 'error'}). Buat ulang refresh token (SETUP.md langkah 4).', c: C.error)
+        else if (_drive != null)
+          line(Icons.check_circle_outline, 'Google Drive: server dapat masuk ke Drive', c: C.success),
         const SizedBox(height: 8),
+        if (s.signedIn) ...[
+          PillButton(
+            dark: false,
+            icon: Icons.cloud_sync_outlined,
+            label: _driveBusy ? 'Memeriksa...' : 'Periksa Google Drive',
+            onPressed: _driveBusy ? null : _checkDrive,
+          ),
+          const SizedBox(height: 8),
+        ],
+        if (s.photosPendingUpload.isNotEmpty && s.photoUploadReady) ...[
+          PillButton(
+            dark: false,
+            icon: Icons.cloud_upload_outlined,
+            label: 'Pindahkan foto lama ke Drive',
+            onPressed: () async { await s.migrateLegacyPhotos(); if (mounted) setState(() {}); },
+          ),
+          const SizedBox(height: 8),
+        ],
         PillButton(
           dark: false,
           icon: Icons.sync,
@@ -134,6 +184,7 @@ class _SyncCardState extends State<_SyncCard> {
           onPressed: _busy ? null : () async {
             setState(() => _busy = true);
             await s.sync.retryPending();
+            await s.migrateLegacyPhotos();
             if (mounted) setState(() => _busy = false);
           },
         ),

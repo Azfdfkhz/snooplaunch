@@ -63,13 +63,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
         if (mounted) Navigator.of(context).pop();
         return;
       }
-      final stored = await CaptureService.persist(photo.photoPath);
+      // Foto tetap berupa berkas sementara kamera; layar hasil mengunggahnya ke Drive lalu menghapusnya.
+      final memoryId = const Uuid().v4();
       final near = s.scheduleNear(now);
       s.addMemory(Memory(
-        id: const Uuid().v4(),
+        id: memoryId,
         title: near?.title ?? (widget.isOut ? 'Absen Pulang' : 'Absen Masuk'),
         scheduleId: near?.id,
-        photoPath: stored,
+        photoPath: photo.photoPath,
         capturedAt: now,
         takenAt: photo.takenAt,
         lat: photo.lat, lng: photo.lng, accuracy: photo.accuracy, placeName: photo.placeName,
@@ -77,7 +78,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
       ));
       if (!mounted) return;
       await Navigator.of(context).pushReplacement(MaterialPageRoute(
-        builder: (_) => AttendanceDoneScreen(capture: photo, photoPath: stored, isOut: widget.isOut, recordedAt: now),
+        builder: (_) => AttendanceDoneScreen(capture: photo, memoryId: memoryId, isOut: widget.isOut, recordedAt: now),
       ));
     } on CaptureFailure catch (e) {
       if (mounted) setState(() => _failure = e);

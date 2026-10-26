@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'theme.dart';
@@ -164,14 +163,17 @@ class EmptyState extends StatelessWidget {
 }
 
 class PolaroidCard extends StatelessWidget {
-  final String? photoPath;
+  /// Foto (biasanya MemoryPhoto). Null = placeholder.
+  final Widget? photo;
+  /// Penanda status kecil di pojok foto (mis. ikon cloud).
+  final Widget? badge;
   final String title;
   final String meta;
   final String? place;
   final double angle;
   final VoidCallback? onTap;
   final double photoHeight;
-  const PolaroidCard({super.key, this.photoPath, required this.title, required this.meta, this.place, this.angle = 0, this.onTap, this.photoHeight = 120});
+  const PolaroidCard({super.key, this.photo, this.badge, required this.title, required this.meta, this.place, this.angle = 0, this.onTap, this.photoHeight = 120});
   @override
   Widget build(BuildContext context) => RepaintBoundary(child: Transform.rotate(
         angle: angle * math.pi / 180,
@@ -190,10 +192,10 @@ class PolaroidCard extends StatelessWidget {
                 child: SizedBox(
                   height: photoHeight,
                   width: double.infinity,
-                  child: photoPath != null
-                      ? Image.file(File(photoPath!), fit: BoxFit.cover, cacheWidth: 400, gaplessPlayback: true,
-                          errorBuilder: (_, __, ___) => Container(color: C.soft, child: const Icon(Icons.broken_image_outlined, color: C.text2)))
-                      : Container(color: C.soft, child: const Icon(Icons.image_outlined, color: C.text2)),
+                  child: Stack(fit: StackFit.expand, children: [
+                    photo ?? Container(color: C.soft, child: const Icon(Icons.image_outlined, color: C.text2)),
+                    if (badge != null) Positioned(top: 6, right: 6, child: badge!),
+                  ]),
                 ),
               ),
               const SizedBox(height: 8),
