@@ -44,16 +44,12 @@ class BackendService {
   Future<AuthResponse> signIn(String email, String password) =>
       client.auth.signInWithPassword(email: email.trim(), password: password);
 
-  /// Tautan konfirmasi email membuka aplikasi lewat deep link ini (bukan localhost).
-  /// Harus sama dengan Redirect URL di Supabase > Authentication > URL Configuration.
-  static const authRedirectUrl = 'com.snoop.snoop://login-callback';
-
   Future<AuthResponse> signUp(String email, String password) =>
-      client.auth.signUp(email: email.trim(), password: password, emailRedirectTo: authRedirectUrl);
-
-  /// Kirim ulang email konfirmasi (tautan lama masih mengarah ke localhost:3000).
-  Future<void> resendConfirmation(String email) =>
-      client.auth.resend(type: OtpType.signup, email: email.trim(), emailRedirectTo: authRedirectUrl);
+      client.auth.signUp(
+        email: email.trim(),
+        password: password,
+        emailRedirectTo: 'com.snoop.snoop://login-callback',
+      );
 
   Future<void> signOut() => client.auth.signOut();
 
