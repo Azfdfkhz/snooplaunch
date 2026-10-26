@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../main.dart' show AppScope;
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import '../services/launcher_service.dart';
@@ -48,6 +49,16 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && LauncherService.stale) LauncherService.apps(force: true);
+    final s = AppScope.of(context);
+    switch (state) {
+      case AppLifecycleState.resumed:
+        s.onAppResumed();
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        s.onAppPaused(); // tulis data ke penyimpanan sebelum sistem sempat mematikan aplikasi
+    }
   }
 
   void _goTo(int page) {

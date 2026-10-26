@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthException, PostgrestException;
 import 'package:uuid/uuid.dart';
 import 'models.dart';
 import '../services/backend_service.dart';
@@ -83,6 +83,7 @@ class AppState extends ChangeNotifier {
     reminders = readList('reminders', Reminder.fromJson);
     memories = readList('memories', Memory.fromJson);
     attendance = readList('attendance', Attendance.fromJson);
+    for (final a in attendance) { _knownAttendance[a.day] = a; }
     evidence = readList('evidence', TaskEvidence.fromJson);
     favorites = (_p!.getStringList('favorites') ?? []).toSet();
     dock = (_p!.getStringList('dock') ?? []).take(dockMax).toList();
@@ -238,29 +239,88 @@ class AppState extends ChangeNotifier {
     changed();
   }
 
-  Future<void> _save() async {
+  /// Antrean penyimpanan: setiap simpan menunggu simpan sebelumnya, dan data di-encode LEBIH DULU
+  /// (sebelum ada await) sehingga satu simpan selalu memuat satu keadaan yang utuh. Dulu simpan berjalan
+  /// bersamaan dan tidak ditunggu, sehingga aplikasi yang dimatikan sistem saat berpindah ke aplikasi lain
+  /// bisa kehilangan catatan absensi yang baru saja ditandai.
+  Future<void> _saveChain = Future.value();
+
+  Future<void> _save() {
     final p = _p;
-    if (p == null) return;
-    await p.setString('profile_name', name);
-    await p.setString('profile_full_name', fullName);
-    await p.setString('profile_school', school);
-    await p.setString('profile_company', company);
-    await p.setString('profile_period', period);
-    await p.setInt('work_start', workStartMin);
-    await p.setInt('work_end', workEndMin);
-    await p.setInt('late_tolerance', lateToleranceMin);
-    await p.setString('theme', theme);
-    await p.setString('schedule', jsonEncode(schedule.map((e) => e.toJson()).toList()));
-    await p.setString('reminders', jsonEncode(reminders.map((e) => e.toJson()).toList()));
-    await p.setString('memories', jsonEncode(memories.map((e) => e.toJson()).toList()));
-    await p.setString('attendance', jsonEncode(attendance.map((e) => e.toJson()).toList()));
-    await p.setString('evidence', jsonEncode(evidence.map((e) => e.toJson()).toList()));
-    await p.setStringList('favorites', favorites.toList());
-    await p.setStringList('dock', dock);
-    await p.setBool('onboarded', onboarded);
-    await p.setString('week_notes', jsonEncode(weekNotes));
-    await p.setInt('weekend_end', weekendEndMin);
-    await p.setInt('data_version', dataVersion);
+    if (p == null) return Future.value();
+    _restoreMissingAttendance();
+    final snapshot = <String, Object>{
+      'profile_name': name,
+      'profile_full_name': fullName,
+      'profile_school': school,
+      'profile_company': company,
+      'profile_period': period,
+      'work_start': workStartMin,
+      'work_end': workEndMin,
+      'late_tolerance': lateToleranceMin,
+      'theme': theme,
+      'schedule': jsonEncode(schedule.map((e) => e.toJson()).toList()),
+      'reminders': jsonEncode(reminders.map((e) => e.toJson()).toList()),
+      'memories': jsonEncode(memories.map((e) => e.toJson()).toList()),
+      'attendance': jsonEncode(attendance.map((e) => e.toJson()).toList()),
+      'evidence': jsonEncode(evidence.map((e) => e.toJson()).toList()),
+      'favorites': favorites.toList(),
+      'dock': List<String>.from(dock),
+      'onboarded': onboarded,
+      'week_notes': jsonEncode(weekNotes),
+      'weekend_end': weekendEndMin,
+      'data_version': dataVersion,
+    };
+    _saveChain = _saveChain.then((_) async {
+      for (final e in snapshot.entries) {
+        final v = e.value;
+        if (v is String) {
+          await p.setString(e.key, v);
+        } else if (v is int) {
+          await p.setInt(e.key, v);
+        } else if (v is bool) {
+          await p.setBool(e.key, v);
+        } else if (v is List<String>) {
+          await p.setStringList(e.key, v);
+        }
+      }
+    }).catchError((_) {});
+    return _saveChain;
+  }
+
+  /// Menunggu semua penyimpanan yang sedang berjalan selesai. Dipanggil saat aplikasi ke latar belakang.
+  Future<void> flush() => _saveChain;
+
+  /// Hari absensi yang pernah dimuat/tersimpan. Tidak ada fitur menghapus absensi, jadi hari yang
+  /// tiba-tiba hilang dari daftar berarti ada kesalahan baca/gabung; hari itu dikembalikan sebelum menyimpan
+  /// supaya streak tidak turun karena data yang terpotong.
+  final Map<String, Attendance> _knownAttendance = {};
+
+  void _restoreMissingAttendance() {
+    final have = {for (final a in attendance) a.day};
+    for (final e in _knownAttendance.entries) {
+      if (!have.contains(e.key)) attendance.add(e.value);
+    }
+    for (final a in attendance) {
+      _knownAttendance[a.day] = a;
+    }
+  }
+
+  /// Dipanggil saat aplikasi ke latar belakang (pengguna membuka aplikasi lain).
+  Future<void> onAppPaused() => _save();
+
+  DateTime? _lastResumePull;
+
+  /// Dipanggil saat aplikasi kembali ke depan: kirim antrean yang tertunda lalu muat ulang riwayat dari server,
+  /// agar streak selalu sesuai data server walaupun data lokal sempat terpotong. Dibatasi 1x per 20 detik.
+  Future<void> onAppResumed() async {
+    final last = _lastResumePull;
+    final now = DateTime.now();
+    if (last != null && now.difference(last).inSeconds < 20) return;
+    _lastResumePull = now;
+    notifyListeners(); // hari bisa berganti saat aplikasi di latar belakang
+    await sync.retryPending();
+    await pullAttendanceFromServer();
   }
 
   void changed() { notifyListeners(); _save(); }
@@ -355,48 +415,80 @@ class AppState extends ChangeNotifier {
         _ => AttendanceStatus.present,
       };
 
-  /// Menandai hadir (masuk) untuk hari kerja lampau yang kosong. Mengembalikan null bila berhasil,
+  /// Mengatur status hari lampau: kind = 'hadir' | 'izin' | 'sakit' | 'lainnya'. Hari kosong dibuat; hari yang
+  /// sudah ada diubah selama bukan absen masuk asli (server yang memutuskan). Mengembalikan null bila berhasil,
   /// atau pesan kesalahan untuk ditampilkan.
-  Future<String?> markPastAttendance(DateTime day) async {
-    if (!signedIn) return 'Masuk ke akun cloud dulu untuk menandai absensi.';
+  /// Hasil dari server langsung dimasukkan ke data lokal dan DISIMPAN (ditunggu) sebelum fungsi ini selesai,
+  /// jadi perubahan tidak hilang walau pengguna langsung pindah ke aplikasi lain.
+  Future<String?> setPastStatus(DateTime day, String kind, {String note = ''}) async {
+    if (!signedIn) return 'Masuk ke akun cloud dulu untuk mengubah absensi.';
     try {
-      await BackendService.instance.markPastAttendance(dayKey(day), 'Ditandai manual (lupa absen)');
-      await pullAttendanceFromServer();
+      final row = await BackendService.instance.setPastStatus(dayKey(day), kind, note.trim());
+      // Server adalah sumber kebenaran untuk hari ini: buang catatan lokal lama (yang sudah tersinkron) lalu masukkan baris baru.
+      final old = attendanceOn(day);
+      if (old != null && old.synced) attendance.remove(old);
+      _mergeServerRow(row);
+      notifyListeners();
+      await _save();
+      unawaited(pullAttendanceFromServer());
       return null;
+    } on PostgrestException catch (e) {
+      final m = e.message;
+      if (m.contains('real_record_locked')) return 'Absen masuk asli (dengan lokasi) tidak bisa diubah.';
+      if (m.contains('only_past_days')) return 'Hanya tanggal sebelum hari ini yang bisa diubah.';
+      if (m.contains('snoop_set_past_status') || e.code == 'PGRST202' || e.code == '42883') {
+        return 'Fungsi server belum ada. Jalankan supabase/migration_007_set_past_status.sql di Supabase.';
+      }
+      return 'Gagal menyimpan: $m';
     } catch (_) {
-      return 'Gagal menandai absensi. Periksa koneksi lalu coba lagi.';
+      return 'Gagal menyimpan. Periksa koneksi lalu coba lagi.';
     }
   }
 
+  Future<String?> markPastAttendance(DateTime day) => setPastStatus(day, 'hadir', note: 'Ditandai manual (lupa absen)');
+
+  /// Memasukkan satu baris server ke daftar lokal. Catatan lokal yang belum terkirim tidak ditimpa.
+  void _mergeServerRow(Map<String, dynamic> row) {
+    final checkIn = DateTime.parse(row['check_in_at'] as String).toLocal();
+    final day = dayKey(checkIn);
+    final local = attendanceOn(checkIn);
+    if (local != null && !local.synced) return;
+    final a = Attendance(
+      id: row['id'] as String,
+      day: day,
+      checkInAt: checkIn,
+      status: _serverStatus(row['status'] as String?),
+      synced: true,
+      offlineTime: row['time_source'] == 'device_queued' || row['check_out_time_source'] == 'device_queued',
+      leaveType: row['leave_type'] as String?,
+      note: row['note'] as String?,
+    );
+    final out = row['check_out_at'] as String?;
+    if (out != null) a.checkOutAt = DateTime.parse(out).toLocal();
+    attendance.removeWhere((e) => e.day == day);
+    attendance.add(a);
+    _knownAttendance[day] = a;
+  }
+
+  bool _pulling = false;
+
   /// Memuat riwayat absensi dari server, termasuk data sebelum aplikasi ini dipakai.
   /// Catatan lokal yang belum terkirim tidak ditimpa (antreannya akan mengirim). Aman dipanggil berulang.
+  /// Semua baris digabung dulu, baru disimpan SEKALI dan ditunggu sampai selesai.
   Future<void> pullAttendanceFromServer() async {
-    if (!signedIn) return;
+    if (!signedIn || _pulling) return;
+    _pulling = true;
     try {
       final rows = await BackendService.instance.fetchAllAttendance();
       for (final row in rows) {
-        final checkIn = DateTime.parse(row['check_in_at'] as String).toLocal();
-        final day = dayKey(checkIn);
-        final local = attendanceOn(checkIn);
-        if (local != null && !local.synced) continue;
-        final a = Attendance(
-          id: row['id'] as String,
-          day: day,
-          checkInAt: checkIn,
-          status: _serverStatus(row['status'] as String?),
-          synced: true,
-          offlineTime: row['time_source'] == 'device_queued' || row['check_out_time_source'] == 'device_queued',
-          leaveType: row['leave_type'] as String?,
-          note: row['note'] as String?,
-        );
-        final out = row['check_out_at'] as String?;
-        if (out != null) a.checkOutAt = DateTime.parse(out).toLocal();
-        attendance.removeWhere((e) => e.day == day);
-        attendance.add(a);
+        try { _mergeServerRow(row); } catch (_) {} // satu baris rusak tidak boleh menggagalkan seluruh riwayat
       }
-      changed();
+      notifyListeners();
+      await _save();
     } catch (_) {
       // Offline atau belum masuk: data lokal tetap dipakai.
+    } finally {
+      _pulling = false;
     }
   }
 

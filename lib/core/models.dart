@@ -164,7 +164,7 @@ class Attendance {
   factory Attendance.fromJson(Map<String, dynamic> j) => Attendance(
       id: j['id'], day: j['day'], checkInAt: DateTime.parse(j['in']),
       checkOutAt: j['out'] == null ? null : DateTime.parse(j['out']),
-      status: AttendanceStatus.values[j['status']],
+      status: AttendanceStatus.values[(j['status'] as int).clamp(0, AttendanceStatus.values.length - 1)],
       synced: j['synced'] ?? false, offlineTime: j['offline'] ?? false,
       inLat: _d(j['inLat']), inLng: _d(j['inLng']), inAcc: _d(j['inAcc']),
       outLat: _d(j['outLat']), outLng: _d(j['outLng']), outAcc: _d(j['outAcc']),

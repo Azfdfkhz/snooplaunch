@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:snoop/core/models.dart';
 import 'package:snoop/core/state.dart';
 
@@ -59,5 +60,57 @@ void main() {
     expect(s.nextSchedule(DateTime(2026, 10, 26, 20, 0)), isNull); // semua lewat
     s.schedule = [];
     expect(s.nextSchedule(DateTime(2026, 10, 26, 9, 0)), isNull); // tidak ada jadwal
+  });
+
+  test('streak 65 hari tetap utuh setelah disimpan lalu aplikasi dimuat ulang', () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = AppState();
+    await s.load();
+    final t = DateTime.now();
+    s.attendance = [for (var i = 1; i <= 65; i++) _a(DateTime(t.year, t.month, t.day - i, 8))];
+    s.changed();
+    await s.flush();
+
+    final reloaded = AppState();
+    await reloaded.load();
+    expect(reloaded.attendance.length, 65);
+    expect(reloaded.streak, 65);
+  });
+
+  test('hari absensi yang hilang dari daftar dikembalikan sebelum disimpan', () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = AppState();
+    await s.load();
+    final t = DateTime.now();
+    s.attendance = [for (var i = 1; i <= 10; i++) _a(DateTime(t.year, t.month, t.day - i, 8))];
+    s.changed();
+    await s.flush();
+
+    s.attendance = s.attendance.take(2).toList(); // simulasi data terpotong
+    s.changed();
+    await s.flush();
+
+    final reloaded = AppState();
+    await reloaded.load();
+    expect(reloaded.attendance.length, 10);
+  });
+
+  test('izin dan sakit di hari kerja lampau tidak memutus streak', () {
+    final s = AppState();
+    final t = DateTime.now();
+    // 10 hari kalender sebelum hari ini: semua hadir kecuali 2 hari yang izin/sakit.
+    final list = <Attendance>[];
+    for (var i = 1; i <= 10; i++) {
+      final d = DateTime(t.year, t.month, t.day - i, 8);
+      final leave = i == 4 || i == 5;
+      list.add(Attendance(
+        id: 'x$i', day: dayKey(d), checkInAt: d,
+        status: leave ? AttendanceStatus.leave : AttendanceStatus.present,
+        leaveType: leave ? (i == 4 ? 'izin' : 'sakit') : null,
+      ));
+    }
+    s.attendance = list;
+    expect(s.streak, 8); // 8 hari hadir; 2 hari izin/sakit tidak memutus dan tidak menambah
+    expect(s.dayKindOn(DateTime(t.year, t.month, t.day - 4)), 'izin');
   });
 }

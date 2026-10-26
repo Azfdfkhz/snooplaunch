@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'flame.dart';
 import 'theme.dart';
 
 class SnoopCard extends StatelessWidget {
@@ -334,7 +335,7 @@ class StreakBadge extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: S.x2, vertical: 6),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.local_fire_department_rounded, size: 20, color: flame),
+            FlameIcon(size: 20, color: flame),
             const SizedBox(width: 4),
             Text(lit ? '$days hari' : 'Mulai streak', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: fg)),
           ]),

@@ -67,9 +67,55 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('Catatan minggu disimpan.')));
   }
 
-  Future<void> _markPast(AppState s) async {
-    final err = await s.markPastAttendance(_sel);
-    _toast(err ?? 'Absensi ${dateLong(_sel)} ditandai hadir.');
+  /// Pilih status untuk hari lampau: hadir, izin, sakit, atau lainnya. Izin/sakit/lainnya meminta keterangan.
+  Future<void> _setPast(AppState s, {String? preset}) async {
+    final day = _sel;
+    final current = s.attendanceOn(day);
+    final choice = preset ?? await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(title: Text('Status ${dateLong(day)}', style: const TextStyle(fontWeight: FontWeight.w800))),
+          ListTile(leading: const Icon(Icons.how_to_reg_rounded), title: const Text('Hadir'), onTap: () => Navigator.pop(ctx, 'hadir')),
+          ListTile(leading: const Icon(Icons.event_busy_outlined), title: const Text('Izin'), onTap: () => Navigator.pop(ctx, 'izin')),
+          ListTile(leading: const Icon(Icons.medical_services_outlined), title: const Text('Sakit'), onTap: () => Navigator.pop(ctx, 'sakit')),
+          ListTile(leading: const Icon(Icons.more_horiz_rounded), title: const Text('Lainnya'), onTap: () => Navigator.pop(ctx, 'lainnya')),
+        ]),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    var note = '';
+    if (choice != 'hadir') {
+      final n = await _pastNote(leaveLabel(choice), initial: current?.status == AttendanceStatus.leave ? (current?.note ?? '') : '');
+      if (n == null || !mounted) return;
+      note = n;
+    } else {
+      note = 'Ditandai manual (lupa absen)';
+    }
+    final err = await s.setPastStatus(day, choice, note: note);
+    _toast(err ?? 'Absensi ${dateLong(day)} diubah menjadi ${choice == 'hadir' ? 'hadir' : leaveLabel(choice)}.');
+  }
+
+  Future<String?> _pastNote(String label, {String initial = ''}) async {
+    final ctrl = TextEditingController(text: initial);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('$label · ${dateLong(_sel)}'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLength: 200,
+          decoration: const InputDecoration(labelText: 'Keterangan (opsional)', hintText: 'Contoh: demam, urusan keluarga'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Simpan')),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    return result;
   }
 
   void _toast(String msg) => ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(msg)));
@@ -475,7 +521,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final a = s.attendanceOn(_sel);
     if (a == null) {
       final msg = future ? 'Belum tiba' : (_same(_sel, today) ? 'Belum absen hari ini' : 'Tidak ada absensi pada tanggal ini');
-      // Hari kerja lampau yang kosong: bisa ditandai hadir (lupa absen) agar streak terbaca.
+      // Hari kerja lampau yang kosong: bisa ditandai hadir, izin, atau sakit agar streak terbaca.
       final canMark = s.dayKindOn(_sel) == 'absen';
       return SnoopCard(
         color: C.soft,
@@ -487,21 +533,61 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           ]),
           if (canMark) ...[
             const SizedBox(height: S.x3),
-            FilledButton.icon(
-              onPressed: () => _markPast(s),
-              icon: const Icon(Icons.how_to_reg_rounded, size: 18),
-              label: const Text('Tandai hadir (masuk)', style: TextStyle(fontWeight: FontWeight.w800)),
-              style: FilledButton.styleFrom(backgroundColor: C.accent, foregroundColor: C.ink, shape: const StadiumBorder()),
+            const Text('Tandai tanggal ini sebagai:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: C.text2)),
+            const SizedBox(height: S.x2),
+            Row(children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => _setPast(s, preset: 'hadir'),
+                  icon: const Icon(Icons.how_to_reg_rounded, size: 18),
+                  label: const Text('Hadir', style: TextStyle(fontWeight: FontWeight.w800)),
+                  style: FilledButton.styleFrom(backgroundColor: C.accent, foregroundColor: C.ink, shape: const StadiumBorder()),
+                ),
+              ),
+              const SizedBox(width: S.x2),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _setPast(s, preset: 'izin'),
+                  icon: const Icon(Icons.event_busy_outlined, size: 18),
+                  label: const Text('Izin', style: TextStyle(fontWeight: FontWeight.w800)),
+                  style: OutlinedButton.styleFrom(foregroundColor: C.ink, shape: const StadiumBorder()),
+                ),
+              ),
+              const SizedBox(width: S.x2),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _setPast(s, preset: 'sakit'),
+                  icon: const Icon(Icons.medical_services_outlined, size: 18),
+                  label: const Text('Sakit', style: TextStyle(fontWeight: FontWeight.w800)),
+                  style: OutlinedButton.styleFrom(foregroundColor: C.ink, shape: const StadiumBorder()),
+                ),
+              ),
+            ]),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(onPressed: () => _setPast(s, preset: 'lainnya'), child: const Text('Alasan lain', style: TextStyle(fontWeight: FontWeight.w700, color: C.ink))),
             ),
           ],
         ]),
       );
     }
+    // Hari lampau yang bukan absen masuk asli (tanpa lokasi): hasil backfill, tanda manual, izin/sakit. Boleh diubah.
+    final editable = !future && !_same(_sel, today) && (a.status == AttendanceStatus.leave || a.inLat == null);
+    Widget editButton() => Padding(
+          padding: const EdgeInsets.only(top: S.x3),
+          child: OutlinedButton.icon(
+            onPressed: () => _setPast(s),
+            icon: const Icon(Icons.edit_calendar_rounded, size: 18),
+            label: const Text('Ubah status', style: TextStyle(fontWeight: FontWeight.w800)),
+            style: OutlinedButton.styleFrom(foregroundColor: C.ink, shape: const StadiumBorder()),
+          ),
+        );
     if (a.status == AttendanceStatus.leave) {
       return SnoopCard(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          StatusChip(leaveLabel(a.leaveType), bg: C.accentSoft, fg: C.ink, icon: Icons.event_busy_rounded),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Align(alignment: Alignment.centerLeft, child: StatusChip(leaveLabel(a.leaveType), bg: C.accentSoft, fg: C.ink, icon: Icons.event_busy_rounded)),
           if (a.note != null) Padding(padding: const EdgeInsets.only(top: S.x2), child: Text(a.note!, style: Theme.of(context).textTheme.bodySmall)),
+          if (editable) editButton(),
         ]),
       );
     }
@@ -516,6 +602,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         const SizedBox(height: S.x3),
         _kv('Masuk', hm(a.checkInAt)),
         _kv('Pulang', a.checkOutAt == null ? 'Belum absen pulang' : hm(a.checkOutAt!)),
+        if (editable) editButton(),
       ]),
     );
   }

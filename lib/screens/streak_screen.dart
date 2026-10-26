@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+import '../core/flame.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
@@ -27,15 +28,7 @@ class StreakScreen extends StatefulWidget {
   State<StreakScreen> createState() => _StreakScreenState();
 }
 
-class _StreakScreenState extends State<StreakScreen> with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _pulse.dispose();
-    super.dispose();
-  }
-
+class _StreakScreenState extends State<StreakScreen> {
   String _message(int streak, String todayKind) {
     if (streak == 0) return 'Mulai streakmu dengan absen masuk hari ini.';
     if (todayKind == 'hadir' || todayKind == 'izin') return 'Streak hari ini aman. Sampai jumpa besok!';
@@ -43,40 +36,10 @@ class _StreakScreenState extends State<StreakScreen> with SingleTickerProviderSt
     return 'Absen masuk hari ini untuk menjaga streakmu.';
   }
 
-  Widget _flame(int streak) {
-    final lit = streak > 0;
-    return AnimatedBuilder(
-      animation: _pulse,
-      builder: (_, __) {
-        final t = Curves.easeInOut.transform(_pulse.value);
-        return Stack(alignment: Alignment.center, children: [
-          Container(
-            width: 230 + 16 * t,
-            height: 230 + 16 * t,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: (lit ? C.accent : C.onNight2).withValues(alpha: lit ? 0.10 + 0.06 * t : 0.05),
-            ),
-          ),
-          Transform.scale(
-            scale: lit ? 1 + 0.04 * t : 1,
-            child: Icon(Icons.local_fire_department_rounded, size: 160, color: lit ? C.accent : C.onNight2),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 52),
-            child: TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: 0, end: streak.toDouble()),
-              duration: const Duration(milliseconds: 900),
-              curve: Curves.easeOutCubic,
-              builder: (_, v, __) => Text(
-                '${v.round()}',
-                style: TextStyle(fontSize: 58, fontWeight: FontWeight.w900, height: 1, color: lit ? C.ink : C.onNight),
-              ),
-            ),
-          ),
-        ]);
-      },
-    );
+  Widget _flame(int streak, String todayKind) {
+    // Streak masih ada tetapi hari ini (hari kerja) belum absen: api dibuat redup sebagai peringatan.
+    final atRisk = streak > 0 && todayKind == 'belum' && DateTime.now().weekday < DateTime.saturday;
+    return FlameView(days: streak, lit: streak > 0, atRisk: atRisk, width: 210);
   }
 
   Widget _dayDot(AppState s, DateTime d, DateTime today) {
@@ -89,7 +52,7 @@ class _StreakScreenState extends State<StreakScreen> with SingleTickerProviderSt
       _ => C.onNight.withValues(alpha: 0.08),
     };
     final icon = switch (k) {
-      'hadir' => const Icon(Icons.local_fire_department_rounded, size: 20, color: C.ink),
+      'hadir' => const FlameIcon(size: 22, color: C.ink, core: C.accent),
       'izin' => const Icon(Icons.event_busy_rounded, size: 18, color: C.ink),
       'absen' => const Icon(Icons.close_rounded, size: 18, color: C.error),
       _ => const SizedBox.shrink(),
@@ -182,7 +145,7 @@ class _StreakScreenState extends State<StreakScreen> with SingleTickerProviderSt
               padding: const EdgeInsets.fromLTRB(S.x4, 0, S.x4, S.x5),
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 const SizedBox(height: S.x2),
-                Center(child: _flame(streak)),
+                Center(child: _flame(streak, todayKind)),
                 const SizedBox(height: S.x2),
                 Text(
                   'hari berturut-turut',

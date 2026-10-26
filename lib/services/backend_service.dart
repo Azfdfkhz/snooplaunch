@@ -95,6 +95,10 @@ class BackendService {
   Future<Map<String, dynamic>> markPastAttendance(String day, String note) =>
       _rpc('snoop_mark_past_attendance', {'p_day': day, 'p_note': note});
 
+  /// Mengatur status hari lampau: kind = 'hadir' | 'izin' | 'sakit' | 'lainnya' (migration_007).
+  Future<Map<String, dynamic>> setPastStatus(String day, String kind, String note) =>
+      _rpc('snoop_set_past_status', {'p_day': day, 'p_kind': kind, 'p_note': note});
+
   /// Seluruh riwayat absensi milik pengguna (paginasi 1000 baris). RLS membatasi ke baris sendiri.
   Future<List<Map<String, dynamic>>> fetchAllAttendance() async {
     final out = <Map<String, dynamic>>[];
