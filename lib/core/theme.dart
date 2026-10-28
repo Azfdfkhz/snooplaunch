@@ -39,6 +39,25 @@ class C {
   static const red = error;
 }
 
+/// Palet "Mindate" untuk fitur bagikan bukti absensi: gradien biru langit -> mint, teks slate gelap.
+/// Dipakai gambar bukti (EvidenceService) dan layar Absensi Tercatat agar tampilannya sama.
+class M {
+  static const skyTop = Color(0xFFA8D8FA);
+  static const skyMid = Color(0xFFC9E8FB);
+  static const mint = Color(0xFFD3F6E6);
+  static const ink = Color(0xFF1E3A4C);     // kontras tinggi di atas gradien
+  static const muted = Color(0xFF46606F);   // teks sekunder, >= 4.5:1 di atas panel putih & gradien
+  static const panel = Color(0xF5FFFFFF);
+  static const line = Color(0xFFE1ECF2);
+  static const ok = Color(0xFF2F9E6B);
+  static const warn = Color(0xFFE08A1E);
+  static const bad = Color(0xFFD9534F);
+  static const gradient = LinearGradient(
+    begin: Alignment.topCenter, end: Alignment.bottomCenter,
+    colors: [skyTop, skyMid, mint], stops: [0, .5, 1],
+  );
+}
+
 /// Radius & spacing (skala 4/8 dp).
 class R {
   static const card = 28.0;

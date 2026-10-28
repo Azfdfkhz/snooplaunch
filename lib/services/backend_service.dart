@@ -91,6 +91,13 @@ class BackendService {
   }
 
   /// Riwayat dari server (untuk menampilkan data di perangkat baru).
+  /// Absen ulang hari ini (migration_008). kind = 'masuk' | 'pulang'. Mengembalikan false bila catatan
+  /// belum ada di server (tidak ada yang perlu dibatalkan).
+  Future<bool> redoAttendance(String id, String kind) async {
+    final r = await _rpc('snoop_redo_attendance', {'p_id': id, 'p_kind': kind});
+    return r['redone'] == true;
+  }
+
   /// Menandai hadir untuk hari kerja lampau yang belum ada absensinya (dari tanggal 'yyyy-mm-dd').
   Future<Map<String, dynamic>> markPastAttendance(String day, String note) =>
       _rpc('snoop_mark_past_attendance', {'p_day': day, 'p_note': note});

@@ -3,7 +3,6 @@ import 'package:share_plus/share_plus.dart';
 import '../core/flame.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
-import '../core/widgets.dart';
 
 /// Buka layar api streak: layar penuh gelap dengan api yang berdenyut, gaya streak TikTok.
 Future<void> openStreak(BuildContext context, AppState s) => Navigator.of(context).push(

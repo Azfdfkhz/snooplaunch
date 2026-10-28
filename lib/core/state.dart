@@ -567,6 +567,60 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
+  /// Absen ulang untuk perbaikan (hanya hari ini). [isOut] false = ulangi absen masuk (catatan hari ini
+  /// dihapus, lalu absen masuk baru memakai waktu server saat itu); true = ulangi absen pulang (jam pulang
+  /// dikosongkan). [memoryId] = dokumentasi foto absen yang diganti; ikut dihapus (termasuk di Drive).
+  /// Mengembalikan null bila berhasil, atau pesan yang bisa ditampilkan. Tidak ada perubahan lokal bila server menolak.
+  Future<String?> redoAttendance({required bool isOut, String? memoryId}) async {
+    final a = today;
+    if (a == null || a.status == AttendanceStatus.leave) return 'Belum ada absensi hari ini untuk diulang.';
+    if (isOut && a.checkOutAt == null) return 'Absen pulang belum tercatat.';
+    if (!isOut && a.checkOutAt != null) return 'Absen pulang sudah tercatat. Ulangi absen pulang dulu, baru absen masuk.';
+
+    // 1) Server dulu: bila gagal, data lokal dibiarkan agar tidak berbeda dari server.
+    if (photoUploadReady) {
+      try {
+        await BackendService.instance.redoAttendance(a.id, isOut ? 'pulang' : 'masuk');
+      } catch (e) {
+        final t = e.toString();
+        if (t.contains('only_today')) return 'Absen ulang hanya bisa dilakukan pada hari yang sama.';
+        if (t.contains('checkout_exists')) return 'Absen pulang sudah tercatat. Ulangi absen pulang dulu.';
+        if (t.contains('PGRST202') || t.contains('snoop_redo_attendance')) {
+          return 'Fungsi absen ulang belum ada di server. Jalankan migration_008_redo_attendance.sql di Supabase, lalu coba lagi.';
+        }
+        if (e is SocketException || t.contains('SocketException') || t.contains('ClientException')) {
+          return 'Tidak ada koneksi. Hubungkan ke internet, lalu coba lagi.';
+        }
+        return 'Absen ulang ditolak server. Coba lagi sebentar lagi.';
+      }
+    } else if (a.synced) {
+      return 'Absen ini sudah tercatat di server. Masuk dan hubungkan ke internet untuk mengulangnya.';
+    }
+
+    // 2) Foto absen yang lama (bila ada) dihapus agar tidak dobel.
+    if (memoryId != null) {
+      final err = await removeMemory(memoryId);
+      if (err != null) return err; // server sudah diulang, tetapi foto lama gagal dihapus: beri tahu pengguna
+    }
+
+    // 3) Lokal.
+    await sync.forgetAttendance(a.id);
+    if (!isOut) {
+      attendance.removeWhere((e) => e.id == a.id);
+      changed();
+    } else {
+      final limit = workStartMin + lateToleranceMin;
+      final late = a.checkInAt.hour * 60 + a.checkInAt.minute > limit;
+      a.checkOutAt = null;
+      a.outLat = null; a.outLng = null; a.outAcc = null;
+      a.status = late ? AttendanceStatus.late : AttendanceStatus.present;
+      a.synced = false;
+      changed();
+      sync.pushAttendance(a).catchError((_) {}); // memastikan absen masuk tetap ada di server
+    }
+    return null;
+  }
+
   /// Izin/sakit/lainnya sebagai pengganti absen masuk (tanpa foto). Satu catatan per hari.
   bool recordLeave({required String type, String note = ''}) {
     if (today != null) return false;

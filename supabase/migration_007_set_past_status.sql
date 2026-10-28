@@ -6,22 +6,13 @@
 --     (tanpa koordinat lokasi), yaitu hasil backfill, tanda manual, atau izin/sakit sebelumnya.
 --   * Absen asli dengan lokasi tidak ditimpa (error real_record_locked).
 
--- Pemeriksaan: tabel harus ada di project yang sedang terbuka. Bila tidak, skrip berhenti dengan pesan jelas.
-do $$
-begin
-  if to_regclass('public.attendance_records') is null then
-    raise exception 'Tabel public.attendance_records TIDAK ADA di project Supabase ini. Buka project yang dipakai aplikasi (ref akryjpsockddgptbnlnm) atau jalankan schema.sql dan migration_002..004 lebih dulu.';
-  end if;
-end $$;
-
--- Mengembalikan jsonb (baris absensi) agar tidak bergantung pada tipe tabel.
 create or replace function public.snoop_set_past_status(p_day date, p_kind text, p_note text default '')
-returns jsonb
+returns public.attendance_records
 language plpgsql security definer set search_path = public as $$
 declare
   uid uuid := auth.uid();
   today date := (now() at time zone 'Asia/Jakarta')::date;
-  rec record;
+  rec public.attendance_records;
   t_in timestamptz;
   t_out timestamptz;
   note_txt text := nullif(left(coalesce(p_note, ''), 300), '');
@@ -59,7 +50,7 @@ begin
              time_source = 'server', check_out_time_source = null
        where id = rec.id returning * into rec;
     end if;
-    return to_jsonb(rec);
+    return rec;
   end if;
 
   if p_kind = 'hadir' then
@@ -71,7 +62,7 @@ begin
     values (gen_random_uuid(), uid, t_in, 'leave', false, 'server', p_kind, note_txt)
     returning * into rec;
   end if;
-  return to_jsonb(rec);
+  return rec;
 end $$;
 
 revoke all on function public.snoop_set_past_status(date, text, text) from public, anon;

@@ -51,3 +51,14 @@
 
 ## Update 1.0.0 — Launcher UI/UX Redesign (BELUM dikompilasi)
 Ringkasan: palet kuning/charcoal, Home berpanel organik + widget Absensi/Jadwal/Memories + dock, App Drawer gelap dengan pencarian lintas kategori, swipe-up dock, tombol Home native, onboarding sekali. Rincian, daftar file, dan keterbatasan: lihat `UPDATE_1_0_0_REPORT.md`.
+
+
+## Update 1.2.3
+Bulatan Island lebih kecil + penyetel ukuran, lirik diambil lebih awal (paralel + cache disk), overlay panggilan WhatsApp di atas aplikasi lain, tombol/tab Island beranimasi. Lihat `UPDATE_1_2_3_REPORT.md`.
+
+## Update 1.2.4
+- Normalisasi foto kamera depan: un-mirror otomatis (tidak terbalik cermin).
+- Bukti foto lurus: auto-straighten landscape sensor photos ke portrait tegak + bake orientasi EXIF. Kontrol Putar 90° & Cermin di layar pratinjau.
+- Redesain UI absensi lebih minimalis (dark glassmorphism): CheckInScreen, AttendancePreviewScreen, AttendanceDoneScreen, dan widget foto di HomeScreen (_memoriesWidget).
+- Lihat `UPDATE_1_2_4_REPORT.md`.
+

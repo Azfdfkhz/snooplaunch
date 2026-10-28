@@ -3,8 +3,12 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/memory_photo.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
+import '../core/glass.dart';
 import '../core/widgets.dart';
 import '../main.dart';
+import '../core/state.dart' show dayKey;
+import 'attendance_fix.dart';
+import 'attendance_share.dart';
 
 /// Status foto sebuah dokumentasi (terpisah dari status absensi di server).
 ({String text, IconData icon, Color bg, Color fg}) photoStatusOf(Memory m) {
@@ -85,6 +89,7 @@ class MemoryDetailScreen extends StatefulWidget {
 class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
   bool _deleting = false;
   bool _uploading = false;
+  bool _sharing = false;
 
   Future<void> _delete() async {
     final s = AppScope.of(context);
@@ -110,6 +115,21 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
     Navigator.pop(context);
   }
 
+  /// Dokumentasi absen hari ini bisa diperbaiki: foto ulang (jam tetap) atau absen ulang.
+  Future<void> _fixAttendance(Memory m, DateTime recordedAt) async {
+    final err = await showAttendanceFix(context, memoryId: m.id, isOut: m.isAttendanceOut, recordedAt: recordedAt);
+    if (mounted && err != null) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+  }
+
+  Future<void> _share(Memory m) async {
+    if (_sharing) return;
+    setState(() => _sharing = true);
+    final err = await shareAttendanceMemory(AppScope.of(context), m);
+    if (!mounted) return;
+    setState(() => _sharing = false);
+    if (err != null) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+  }
+
   Future<void> _uploadNow() async {
     final s = AppScope.of(context);
     setState(() => _uploading = true);
@@ -124,59 +144,83 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
     if (m == null) return Scaffold(appBar: AppBar(), body: const Center(child: Text('Dokumentasi tidak ditemukan.')));
     final sched = s.schedule.where((e) => e.id == m.scheduleId).firstOrNull; // kegiatan bisa berbeda per tanggal; tautan tetap berlaku
     final st = photoStatusOf(m);
-    Widget row(IconData i, String k, String v) => Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Icon(i, size: 18, color: C.text2), const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(k, style: Theme.of(context).textTheme.bodySmall), Text(v)])),
-        ]));
+    final att = s.today;
+    final canFix = m.isAttendance && att != null && att.status != AttendanceStatus.leave && att.day == dayKey(m.capturedAt) &&
+        (!m.isAttendanceOut || att.checkOutAt != null);
+    final fixAt = m.isAttendanceOut ? (att?.checkOutAt ?? m.capturedAt) : (att?.checkInAt ?? m.capturedAt);
     final canUpload = m.hasLocalPhoto && !m.inCloud && m.upload != UploadStatus.uploading;
-    return Scaffold(
-      appBar: AppBar(backgroundColor: Colors.transparent, actions: [
-        IconButton(
-          icon: _deleting ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5)) : const Icon(Icons.delete_outline),
-          tooltip: 'Hapus',
-          onPressed: _deleting ? null : _delete,
+    final hasLoc = m.lat != null && m.lng != null;
+
+    Widget row(IconData i, String k, String v) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(i, size: 18, color: G.text2),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(k, style: const TextStyle(fontSize: 11.5, color: G.text2)),
+              Text(v, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: G.text)),
+            ])),
+          ]),
+        );
+
+    // Catatan foto hanya bila ada yang perlu diketahui (status normal sudah terlihat di chip).
+    final photoNote = switch (st.text) {
+      'Tersimpan di Drive' || 'Mengunggah…' => null,
+      'Belum di Drive' => 'Foto masih di perangkat dan belum dikonfirmasi di Drive.${m.uploadError == null ? '' : '\n${m.uploadError}'}',
+      _ => m.uploadError ?? 'Foto tidak tersedia. Ambil foto baru pada absensi atau dokumentasi berikutnya.',
+    };
+    final showDesc = m.description.isNotEmpty && !m.isAttendance;
+
+    return GlassScaffold(
+      child: Column(children: [
+        GlassHeader(
+          title: m.title,
+          subtitle: '${m.capturedAt.day} ${kMonths[m.capturedAt.month - 1]} ${m.capturedAt.year} · ${hm(m.capturedAt)} WIB',
+          onBack: () => Navigator.of(context).pop(),
+          trailing: GlassCircleButton(icon: Icons.delete_outline_rounded, tooltip: 'Hapus', size: 48, onTap: _deleting ? null : _delete),
         ),
-      ]),
-      body: ListView(padding: const EdgeInsets.all(16), children: [
-        // Detail: foto utuh (contain), tidak dipotong.
-        Container(
-          height: 320,
-          decoration: BoxDecoration(color: C.soft, borderRadius: BorderRadius.circular(20)),
-          clipBehavior: Clip.antiAlias,
-          child: MemoryPhoto(memory: m, fit: BoxFit.contain, cacheWidth: 1200),
+        Expanded(
+          child: ListView(padding: const EdgeInsets.fromLTRB(S.x6, S.x3, S.x6, S.x4), children: [
+            // Foto utuh (contain), tidak dipotong.
+            Container(
+              height: 380,
+              decoration: BoxDecoration(color: G.glass, borderRadius: BorderRadius.circular(36), border: Border.all(color: G.glassBorder)),
+              clipBehavior: Clip.antiAlias,
+              child: MemoryPhoto(memory: m, fit: BoxFit.contain, cacheWidth: 1200),
+            ),
+            const SizedBox(height: S.x3),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              StatusChip(st.text, bg: st.bg, fg: st.fg, icon: st.icon),
+              if (sched != null) const StatusChip('Tertaut ke jadwal', bg: C.soft, fg: C.text, icon: Icons.event_outlined),
+            ]),
+            const SizedBox(height: S.x3),
+            GlassBox(
+              radius: 26, padding: const EdgeInsets.fromLTRB(S.x4, S.x2, S.x4, S.x2),
+              child: Column(children: [
+                row(Icons.place_outlined, 'Lokasi', m.placeName ?? (m.lat == null ? 'Lokasi tidak tersedia' : '${m.lat!.toStringAsFixed(5)}, ${m.lng!.toStringAsFixed(5)}')),
+                if (sched != null) row(Icons.event_outlined, 'Jadwal', '${sched.timeLabel}${sched.endMin == null ? '' : ' - ${minToHm(sched.endMin!)}'} (${sched.title})'),
+                if (showDesc) row(Icons.notes, 'Deskripsi', m.description),
+                if (photoNote != null) row(Icons.photo_outlined, 'Foto', photoNote),
+              ]),
+            ),
+          ]),
         ),
-        const SizedBox(height: 12),
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          StatusChip(st.text, bg: st.bg, fg: st.fg, icon: st.icon),
-          if (sched != null) const StatusChip('Tertaut ke jadwal', bg: C.soft, fg: C.text, icon: Icons.event_outlined),
-        ]),
-        const SizedBox(height: 8),
-        Text(m.title, style: Theme.of(context).textTheme.headlineSmall),
-        Text('${m.capturedAt.day} ${kMonths[m.capturedAt.month - 1]} ${m.capturedAt.year} • ${hm(m.capturedAt)} WIB', style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: 8),
-        SnoopCard(child: Column(children: [
-          row(Icons.place_outlined, 'Lokasi', m.placeName ?? (m.lat == null ? 'Lokasi tidak tersedia' : '${m.lat!.toStringAsFixed(5)}, ${m.lng!.toStringAsFixed(5)}')),
-          if (sched != null) row(Icons.event_outlined, 'Jadwal', '${sched.timeLabel}${sched.endMin == null ? '' : ' - ${minToHm(sched.endMin!)}'} (${sched.title})'),
-          if (m.description.isNotEmpty) row(Icons.notes, 'Deskripsi', m.description),
-          row(Icons.photo_outlined, 'Foto', switch (st.text) {
-            'Tersimpan di Drive' => 'Tersimpan permanen di Google Drive. Tidak ada salinan di perangkat.',
-            'Mengunggah…' => 'Sedang diunggah ke Google Drive.',
-            'Belum di Drive' => 'Masih berupa berkas di perangkat dan belum dikonfirmasi di Drive.${m.uploadError == null ? '' : '\n${m.uploadError}'}',
-            _ => m.uploadError ?? 'Foto tidak tersedia. Ambil foto baru pada absensi atau dokumentasi berikutnya.',
-          }),
-        ])),
-        if (canUpload) Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: PillButton(icon: Icons.cloud_upload_outlined, label: _uploading ? 'Mengunggah…' : 'Unggah ke Drive sekarang', onPressed: _uploading ? null : _uploadNow),
-        ),
-        if (m.lat != null && m.lng != null) Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: PillButton(icon: Icons.map_outlined, label: 'Lihat di Google Maps', dark: false, onPressed: () async {
-            final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=${m.lat},${m.lng}');
-            if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Google Maps tidak dapat dibuka.')));
-            }
-          }),
+        GlassBottomBar(
+          actions: [
+            if (hasLoc)
+              GlassAction(icon: Icons.map_outlined, label: 'Lihat di Maps', compact: true, onTap: () async {
+                final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=${m.lat},${m.lng}');
+                if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Google Maps tidak dapat dibuka.')));
+                }
+              }),
+            if (canUpload) GlassAction(icon: Icons.cloud_upload_outlined, label: _uploading ? 'Mengunggah…' : 'Unggah ke Drive', compact: true, onTap: _uploading ? null : _uploadNow),
+            if (canFix) GlassAction(icon: Icons.edit_outlined, label: 'Perbaiki', onTap: () => _fixAttendance(m, fixAt)),
+          ],
+          // Bagikan hanya untuk dokumentasi absen (gambar bukti), sama seperti di layar hasil absensi.
+          primary: m.isAttendance
+              ? GlassCircleButton(icon: Icons.ios_share_rounded, tooltip: _sharing ? 'Menyiapkan gambar…' : 'Bagikan bukti absensi', filled: true, size: 68, onTap: _sharing ? null : () => _share(m))
+              : null,
         ),
       ]),
     );

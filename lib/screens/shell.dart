@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../main.dart' show AppScope;
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import '../services/island_service.dart';
 import '../services/launcher_service.dart';
 import 'app_drawer_screen.dart';
 import 'home_screen.dart';
@@ -39,6 +40,12 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    IslandController.instance.attach(AppScope.of(context));
+  }
+
+  @override
   void dispose() {
     LauncherService.setHomeHandler(null);
     WidgetsBinding.instance.removeObserver(this);
@@ -50,6 +57,7 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && LauncherService.stale) LauncherService.apps(force: true);
     final s = AppScope.of(context);
+    IslandController.instance.onLifecycle(state);
     switch (state) {
       case AppLifecycleState.resumed:
         s.onAppResumed();

@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'core/dynamic_island.dart';
 import 'core/state.dart';
 import 'core/theme.dart';
 import 'screens/shell.dart';
 import 'screens/splash_screen.dart';
+import 'services/island_service.dart';
 
 class AppScope extends InheritedNotifier<AppState> {
   const AppScope({super.key, required AppState state, required super.child}) : super(notifier: state);
@@ -28,6 +29,7 @@ Future<void> main() async {
 
   final state = AppState();
   await state.load(); // hanya membaca penyimpanan lokal, cepat
+  await IslandController.instance.load(); // preferensi Dynamic Island + statistik Pomodoro (lokal)
   runApp(AppScope(state: state, child: const SnoopApp()));
   // Backend, notifikasi, dan sinkronisasi berjalan setelah UI tampil.
   unawaited(state.startBackground());
@@ -46,11 +48,52 @@ class SnoopApp extends StatelessWidget {
             theme: snoopTheme(),
             // Gulir memantul seperti iOS, tanpa efek glow Android.
             scrollBehavior: const _SnoopScroll(),
+            // Dynamic Island melayang di atas semua halaman (termasuk layar yang dibuka lewat push).
+            builder: (context, child) => _StableTop(
+              child: Stack(children: [
+                Positioned.fill(child: child ?? const SizedBox.shrink()),
+                const DynamicIsland(),
+              ]),
+            ),
             // Launcher langsung ke Home; layar pembuka hanya muncul sekali (onboarding).
             home: state.onboarded ? const Shell() : const SplashScreen(),
           );
         },
       );
+}
+
+/// Update 1.2.2: Dynamic Island menyembunyikan status bar saat melebar. Tanpa penahan ini, `padding.top` jadi 0 dan
+/// semua halaman (SafeArea) melompat ke atas. Inset atas ditahan pada nilai terbesar yang pernah terlihat
+/// (diukur ulang saat layar diputar), jadi tata letak tidak bergeser ketika status bar muncul/hilang.
+class _StableTop extends StatefulWidget {
+  final Widget child;
+  const _StableTop({required this.child});
+  @override
+  State<_StableTop> createState() => _StableTopState();
+}
+
+class _StableTopState extends State<_StableTop> {
+  double _top = 0, _viewTop = 0;
+  Orientation? _orientation;
+
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    if (_orientation != mq.orientation) {
+      _orientation = mq.orientation;
+      _top = 0;
+      _viewTop = 0;
+    }
+    if (mq.padding.top > _top) _top = mq.padding.top;
+    if (mq.viewPadding.top > _viewTop) _viewTop = mq.viewPadding.top;
+    return MediaQuery(
+      data: mq.copyWith(
+        padding: mq.padding.copyWith(top: _top),
+        viewPadding: mq.viewPadding.copyWith(top: _viewTop),
+      ),
+      child: widget.child,
+    );
+  }
 }
 
 class _SnoopScroll extends MaterialScrollBehavior {

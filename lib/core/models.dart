@@ -191,3 +191,9 @@ class TaskEvidence {
   factory TaskEvidence.fromJson(Map<String, dynamic> j) => TaskEvidence(
       id: j['id'], scheduleId: j['sched'], day: j['day'], kind: j['kind'], value: j['value'], label: j['label'] ?? '', createdAt: DateTime.parse(j['at']));
 }
+
+/// Dokumentasi yang dibuat otomatis oleh alur absensi dikenali dari deskripsinya.
+extension MemoryAttendance on Memory {
+  bool get isAttendanceOut => description == 'Dokumentasi absen pulang.';
+  bool get isAttendance => description == 'Dokumentasi absen masuk.' || isAttendanceOut;
+}

@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:uuid/uuid.dart';
 import '../core/models.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
@@ -223,7 +225,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('Bukti: ${it.title}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
                   const SizedBox(height: 4),
-                  Text('Foto, dokumen, atau tautan sebagai bukti tugas selesai. Disimpan di perangkat.', style: Theme.of(c).textTheme.bodySmall),
+                  Text('Foto, dokumen, atau tautan sebagai bukti tugas selesai. Disimpan di perangkat; foto juga diunggah ke Google Drive bila sudah masuk.', style: Theme.of(c).textTheme.bodySmall),
                   const SizedBox(height: S.x3),
                   Wrap(spacing: S.x2, runSpacing: S.x2, children: [
                     _addChip(Icons.photo_camera_outlined, 'Kamera', () => _addPhoto(s, it, ImageSource.camera)),
@@ -299,7 +301,22 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Future<void> _addPhoto(AppState s, ScheduleItem it, ImageSource src) async {
     try {
       final e = await TaskEvidenceStore.pickPhoto(it.id, dayKey(_sel), src);
-      if (e != null) s.addEvidence(e);
+      if (e == null) return;
+      s.addEvidence(e);
+      // Foto kegiatan juga dicatat sebagai dokumentasi dan diunggah ke Google Drive.
+      // Memakai salinan terpisah: unggahan yang berhasil menghapus berkasnya, bukti lokal tetap aman.
+      final memId = const Uuid().v4();
+      final tmp = await getTemporaryDirectory();
+      final copy = await File(e.value).copy('${tmp.path}/$memId.jpg');
+      s.addMemory(Memory(
+        id: memId,
+        title: it.title,
+        scheduleId: it.id,
+        photoPath: copy.path,
+        capturedAt: DateTime.now(),
+        description: 'Bukti kegiatan: ${it.title}',
+      ));
+      s.uploadMemoryPhoto(memId); // tidak ditunggu; status terlihat di Memories
     } catch (_) {
       _toast('Foto tidak dapat diambil. Periksa izin kamera atau galeri.');
     }
@@ -382,7 +399,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             ),
           ),
           child: KeyedSubtree(
-            key: ValueKey('${_weekly}-${dayKey(_sel)}'),
+            key: ValueKey('$_weekly-${dayKey(_sel)}'),
             child: _weekly ? _weeklyView(s, days, now, today) : _dailyView(s, now, today),
           ),
         ),

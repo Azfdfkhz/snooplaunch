@@ -10,6 +10,7 @@ typedef AttendanceApplied = void Function(String localId, Map<String, dynamic> s
 abstract class SyncService {
   Future<void> pushAttendance(Attendance a);
   Future<void> pushMemory(Memory m);
+  Future<void> forgetAttendance(String id);
   Future<void> retryPending();
 }
 
@@ -79,6 +80,13 @@ class HybridSyncService implements SyncService {
     await _refreshCount();
   }
 
+  /// Membuang entri antrean absensi (dipakai saat absen diulang).
+  @override
+  Future<void> forgetAttendance(String id) async {
+    await _queue.remove(id, 'attendance');
+    await _refreshCount();
+  }
+
   /// Membuang entri antrean metadata dokumentasi yang sudah dihapus.
   Future<void> forgetMemory(String id) async {
     await _queue.remove(id, 'memory');
@@ -118,6 +126,8 @@ class NoopSyncService implements SyncService {
   Future<void> pushAttendance(Attendance a) async {}
   @override
   Future<void> pushMemory(Memory m) async {}
+  @override
+  Future<void> forgetAttendance(String id) async {}
   @override
   Future<void> retryPending() async {}
 }

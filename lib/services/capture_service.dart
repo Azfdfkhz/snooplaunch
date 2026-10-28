@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 class CaptureResult {
@@ -26,8 +28,80 @@ class CaptureFailure implements Exception {
   String toString() => message;
 }
 
+class PhotoTransformConfig {
+  final String path;
+  final bool unmirror;
+  final int rotateDegrees;
+  final bool ensurePortrait;
+  const PhotoTransformConfig(this.path, {this.unmirror = true, this.rotateDegrees = 0, this.ensurePortrait = true});
+}
+
+Future<void> _processPhotoFileWorker(PhotoTransformConfig cfg) async {
+  final f = File(cfg.path);
+  if (!await f.exists()) return;
+  final bytes = await f.readAsBytes();
+  if (bytes.isEmpty) return;
+
+  var image = img.decodeImage(bytes);
+  if (image == null) return;
+
+  // 1. Terapkan orientasi EXIF kamera secara fisik ke piksel
+  image = img.bakeOrientation(image);
+
+  // 2. Pastikan lurus / tegak (portrait):
+  // Pada foto absensi selfie, jika sensor kamera merekam lanskap (width > height),
+  // putar 90 derajat searah jarum jam agar tegak lurus.
+  if (cfg.ensurePortrait && image.width > image.height) {
+    image = img.copyRotate(image, angle: 90);
+  }
+
+  // 3. Putar manual bila pengguna menekan tombol putar di pratinjau
+  if (cfg.rotateDegrees != 0) {
+    image = img.copyRotate(image, angle: cfg.rotateDegrees);
+  }
+
+  // 4. Kamera depan jangan mirror:
+  // Kamera depan Android secara default menyimpan foto terbalik seperti cermin.
+  // Membalik secara horizontal menghasilkan foto dengan orientasi asli (teks & wajah tidak mirror).
+  if (cfg.unmirror) {
+    image = img.flipHorizontal(image);
+  }
+
+  // 5. Batasi resolusi maksimal 1600px untuk performa dan hemat kuota
+  if (image.width > 1600 || image.height > 1600) {
+    image = img.copyResize(
+      image,
+      width: image.width > image.height ? 1600 : null,
+      height: image.height >= image.width ? 1600 : null,
+      interpolation: img.Interpolation.linear,
+    );
+  }
+
+  final jpg = img.encodeJpg(image, quality: 88);
+  await f.writeAsBytes(jpg, flush: true);
+}
+
 /// Kamera + lokasi aktual. Lokasi hanya diambil saat dipanggil (tanpa polling).
 class CaptureService {
+  /// Memproses file foto di disk agar lurus, tidak mirror, dan ukuran optimal.
+  static Future<void> processPhoto(String path, {bool unmirror = true, int rotateDegrees = 0, bool ensurePortrait = true}) async {
+    try {
+      await compute(_processPhotoFileWorker, PhotoTransformConfig(path, unmirror: unmirror, rotateDegrees: rotateDegrees, ensurePortrait: ensurePortrait));
+    } catch (_) {
+      await _processPhotoFileWorker(PhotoTransformConfig(path, unmirror: unmirror, rotateDegrees: rotateDegrees, ensurePortrait: ensurePortrait));
+    }
+  }
+
+  /// Memutar foto 90 derajat searah jarum jam.
+  static Future<void> rotatePhoto90(String path) async {
+    await processPhoto(path, unmirror: false, rotateDegrees: 90, ensurePortrait: false);
+  }
+
+  /// Membalik foto secara horizontal (toggle mirror).
+  static Future<void> flipPhotoHorizontal(String path) async {
+    await processPhoto(path, unmirror: true, rotateDegrees: 0, ensurePortrait: false);
+  }
+
   /// [onStage] menerima teks tahap yang sedang berjalan (untuk indikator loading).
   /// Mengembalikan null bila pengguna menutup kamera tanpa mengambil foto.
   /// Melempar [CaptureFailure] bila kamera tidak dapat dipakai.
@@ -35,7 +109,10 @@ class CaptureService {
     onStage?.call('Membuka kamera…');
     final XFile? shot;
     try {
-      shot = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 85, maxWidth: 1600);
+      shot = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.front,
+      );
     } on PlatformException catch (e) {
       switch (e.code) {
         case 'camera_access_denied':
@@ -50,6 +127,12 @@ class CaptureService {
       throw const CaptureFailure(CaptureFailureKind.unknown, 'Kamera gagal dibuka. Coba lagi.');
     }
     if (shot == null) return null;
+
+    onStage?.call('Menyiapkan foto…');
+    try {
+      // Normalisasi: luruskan (tidak miring) dan un-mirror kamera depan
+      await processPhoto(shot.path, unmirror: true, ensurePortrait: true);
+    } catch (_) {}
     final takenAt = DateTime.now();
 
     onStage?.call('Mengambil lokasi…');
@@ -83,6 +166,20 @@ class CaptureService {
       note = 'Lokasi belum bisa didapat. Absensi dicatat tanpa lokasi.';
     }
     return CaptureResult(shot.path, takenAt: takenAt, lat: lat, lng: lng, accuracy: acc, placeName: place, locationNote: note);
+  }
+
+  /// Layanan lokasi perangkat aktif? Bila gagal membaca status, dianggap aktif agar tidak memblokir absensi.
+  static Future<bool> isLocationOn() async {
+    try {
+      return await Geolocator.isLocationServiceEnabled();
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Membuka pengaturan lokasi perangkat (untuk menyalakan GPS).
+  static Future<void> openLocationSettings() async {
+    try { await Geolocator.openLocationSettings(); } catch (_) {}
   }
 
   /// Membuka halaman pengaturan aplikasi (untuk mengaktifkan izin kamera).

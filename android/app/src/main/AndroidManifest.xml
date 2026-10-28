@@ -17,6 +17,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Internet untuk sinkronisasi Supabase (opsional jika offline-only) -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Update 1.2.3: kartu panggilan WhatsApp di atas aplikasi lain ("Tampil di atas aplikasi lain"). Opsional; diberikan pengguna. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:label="SNOOP"
@@ -60,6 +62,18 @@
                 <data android:scheme="com.snoop.snoop" android:host="login-callback" />
             </intent-filter>
         </activity>
+
+        <!-- Update 1.2.2: membaca lagu aplikasi lain (Spotify) dan panggilan masuk WhatsApp untuk Dynamic Island.
+             Aktif hanya setelah pengguna memberi "Akses notifikasi" kepada SNOOP di pengaturan Android. -->
+        <service
+            android:name=".SnoopNotificationListener"
+            android:exported="true"
+            android:label="SNOOP Dynamic Island"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <!-- Receiver untuk menjadwal ulang notifikasi setelah reboot -->
         <receiver

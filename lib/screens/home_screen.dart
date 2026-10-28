@@ -10,6 +10,7 @@ import '../main.dart';
 import '../services/launcher_service.dart';
 import 'auth_screen.dart';
 import 'checkin_screen.dart';
+import 'google_search_sheet.dart';
 import 'streak_screen.dart';
 import 'memories_screen.dart';
 
@@ -85,18 +86,18 @@ class _HomeScreenState extends State<HomeScreen> {
             const Text('SNOOP', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 1.5, color: C.ink)),
             const Spacer(),
             Tooltip(
-              message: 'Profil',
+              message: 'Cari di Google',
               child: Semantics(
                 button: true,
-                label: 'Buka profil',
+                label: 'Cari di Google',
                 excludeSemantics: true,
                 child: Material(
                   color: C.ink,
                   shape: const CircleBorder(),
                   child: InkWell(
                     customBorder: const CircleBorder(),
-                    onTap: () => widget.onGoTo(5),
-                    child: const SizedBox(width: 48, height: 48, child: Icon(Icons.person_rounded, color: Colors.white, size: 24)),
+                    onTap: () => showGoogleSearch(context),
+                    child: const SizedBox(width: 48, height: 48, child: Icon(Icons.search_rounded, color: Colors.white, size: 26)),
                   ),
                 ),
               ),
@@ -112,13 +113,27 @@ class _HomeScreenState extends State<HomeScreen> {
           Text(dateLong(now), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: C.ink)),
           const SizedBox(height: S.x6),
           // Identitas ditaruh di sisi kiri-bawah, di luar area yang terpotong lengkung.
+          // Ketuk nama untuk membuka profil (tombol profil di kanan atas diganti pencarian Google).
           FractionallySizedBox(
             widthFactor: .42,
             alignment: Alignment.centerLeft,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(greeting(now), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: C.ink)),
-              Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.ink)),
-            ]),
+            child: Semantics(
+              button: true,
+              label: 'Buka profil ${s.name}',
+              excludeSemantics: true,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => widget.onGoTo(5),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(greeting(now), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: C.ink)),
+                  Row(children: [
+                    Flexible(child: Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.ink))),
+                    const SizedBox(width: 2),
+                    const Icon(Icons.chevron_right_rounded, size: 20, color: C.ink),
+                  ]),
+                ]),
+              ),
+            ),
           ),
         ]),
       ),
@@ -338,7 +353,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _memoriesWidget(AppState s) {
     final m = s.memories.isEmpty ? null : s.memories.first;
-    Widget placeholder(IconData icon) => ColoredBox(color: C.night, child: Center(child: Icon(icon, size: 34, color: C.onNight2)));
+    final st = m == null ? null : photoStatusOf(m);
     return Semantics(
       button: true,
       label: m == null ? 'Memories: belum ada dokumentasi' : 'Memories: ${m.title}',
@@ -349,23 +364,83 @@ class _HomeScreenState extends State<HomeScreen> {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => m == null ? widget.onGoTo(3) : Navigator.of(context).push(MaterialPageRoute(builder: (_) => MemoryDetailScreen(id: m.id))),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Expanded(
-              child: m != null
-                  ? MemoryPhoto(memory: m, thumb: true, cacheWidth: 400, compact: true, placeholderColor: C.night)
-                  : placeholder(Icons.photo_camera_outlined),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(S.x3, S.x2, S.x3, S.x3),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Expanded(child: Text(m == null ? 'Memories' : hm(m.capturedAt), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: C.onNight2))),
-                  if (m != null) Icon(photoStatusOf(m).icon, size: 14, color: photoStatusOf(m).bg), // status foto: cloud / belum / gagal
+          child: m == null
+              ? Container(
+                  color: C.nightSurface,
+                  padding: const EdgeInsets.all(S.x4),
+                  child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Icon(Icons.photo_camera_outlined, color: C.accent, size: 26),
+                    Spacer(),
+                    Text('Belum ada foto', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: C.onNight)),
+                    SizedBox(height: S.x1),
+                    Text('Ketuk untuk melihat', style: TextStyle(fontSize: 12, color: C.onNight2)),
+                  ]),
+                )
+              : Stack(fit: StackFit.expand, children: [
+                  MemoryPhoto(memory: m, thumb: true, cacheWidth: 600, compact: true, placeholderColor: C.nightSurface),
+                  const Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          stops: [0.0, 0.35, 0.6, 1.0],
+                          colors: [Color(0x55000000), Color(0x00000000), Color(0x10000000), Color(0x99000000)],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 10,
+                    left: 10,
+                    right: 10,
+                    child: Row(children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0x73110E15),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0x38FFFFFF), width: 0.8),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.schedule_rounded, size: 11, color: Colors.white70),
+                          const SizedBox(width: 4),
+                          Text(hm(m.capturedAt), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                        ]),
+                      ),
+                      const Spacer(),
+                      if (st != null)
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: const Color(0x73110E15),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: const Color(0x38FFFFFF), width: 0.8),
+                          ),
+                          child: Icon(st.icon, size: 12, color: st.fg),
+                        ),
+                    ]),
+                  ),
+                  Positioned(
+                    bottom: 10,
+                    left: 10,
+                    right: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0x73110E15),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0x38FFFFFF), width: 0.8),
+                      ),
+                      child: Text(
+                        m.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white, letterSpacing: -0.2),
+                      ),
+                    ),
+                  ),
                 ]),
-                Text(m == null ? 'Belum ada dokumentasi' : m.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: C.onNight)),
-              ]),
-            ),
-          ]),
         ),
       ),
     );
@@ -608,18 +683,15 @@ class _Pill extends StatelessWidget {
   final String text;
   final String semantics;
   final VoidCallback? onTap;
-  final Color bg;
-  final Color fg;
-  final Color iconColor;
   final bool compact;
-  const _Pill({required this.icon, required this.text, required this.semantics, this.onTap, this.bg = C.nightSurface, this.fg = C.onNight, this.iconColor = C.accent, this.compact = false});
+  const _Pill({required this.icon, required this.text, required this.semantics, this.onTap, this.compact = false});
   @override
   Widget build(BuildContext context) => Semantics(
         button: onTap != null,
         label: semantics,
         excludeSemantics: true,
         child: Material(
-          color: bg,
+          color: C.nightSurface,
           shape: const StadiumBorder(),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
@@ -629,10 +701,10 @@ class _Pill extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: S.x4, vertical: S.x2),
                 child: Row(children: [
-                  Icon(icon, size: 20, color: iconColor),
+                  Icon(icon, size: 20, color: C.accent),
                   const SizedBox(width: S.x3),
-                  Expanded(child: Text(text, maxLines: compact ? 1 : 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 13 : 13.5, fontWeight: FontWeight.w600, color: fg))),
-                  if (onTap != null) Icon(Icons.chevron_right_rounded, size: 20, color: fg),
+                  Expanded(child: Text(text, maxLines: compact ? 1 : 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 13 : 13.5, fontWeight: FontWeight.w600, color: C.onNight))),
+                  if (onTap != null) const Icon(Icons.chevron_right_rounded, size: 20, color: C.onNight),
                 ]),
               ),
             ),

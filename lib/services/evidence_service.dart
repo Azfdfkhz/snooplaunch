@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
@@ -78,10 +77,11 @@ Uint8List _encodeJpg(_JpgJob j) {
 /// Membuat gambar bukti absensi (JPEG), menyimpannya sementara, dan membuka share sheet Android.
 /// Tidak menyentuh data absensi maupun backend: hanya merender data yang diberikan.
 class EvidenceService {
-  /// Lebar tetap 1080 px; tinggi mengikuti isi. Foto tidak pernah di-crop, hanya diskalakan.
+  /// Lebar tetap 1080 px; tinggi mengikuti foto. Foto memenuhi seluruh gambar (tanpa bingkai),
+  /// hanya foto yang sangat tinggi dipotong tipis di atas/bawah agar ukuran gambar tetap wajar.
   static const double width = 1080;
   static const double _pad = 56;
-  static const double _maxPhotoH = 1300;
+  static const double _maxH = 2160;
   static const _dirName = 'bukti_absensi';
 
   /// Status pengiriman ke backend. Sengaja tidak pernah bernilai "terverifikasi".
@@ -184,163 +184,103 @@ class EvidenceService {
     return p;
   }
 
-  static void _mark(Canvas c, Offset o, double w) {
-    c.drawArc(Rect.fromLTWH(o.dx + .04 * w, o.dy + .04 * w, .80 * w, .80 * w), math.pi, math.pi, true, Paint()..color = C.ink);
-    c.drawArc(Rect.fromLTWH(o.dx + .16 * w, o.dy + .20 * w, .80 * w, .80 * w), 0, math.pi, true, Paint()..color = C.accent);
-    c.drawCircle(Offset(o.dx + .80 * w, o.dy + .22 * w), .09 * w, Paint()..color = C.pink);
+  /// Kotak kaca: salinan foto yang diburamkan di dalam [rr], diberi tint tipis dan garis tepi halus.
+  static void _glass(Canvas c, ui.Image photo, Rect src, Rect full, RRect rr, {int tint = 0x38000000}) {
+    c.save();
+    c.clipRRect(rr, doAntiAlias: true);
+    c.drawImageRect(photo, src, full,
+        Paint()..filterQuality = FilterQuality.medium..imageFilter = ui.ImageFilter.blur(sigmaX: 40, sigmaY: 40, tileMode: ui.TileMode.clamp));
+    c.drawRect(rr.outerRect, Paint()..color = Color(tint));
+    c.drawRect(rr.outerRect, Paint()..color = const Color(0x1FFFFFFF));
+    c.restore();
+    c.drawRRect(rr, Paint()..style = PaintingStyle.stroke..strokeWidth = 2..color = const Color(0x4DFFFFFF));
   }
 
+  /// Tampilan minimalis: foto penuh, lalu satu kartu kaca buram melayang di bawah (jenis absen + jam,
+  /// tanggal, lokasi, nama) dan label status kaca di atas. Tidak ada kartu detail, catatan, atau jejak ekspor.
   static Future<Uint8List> _render(EvidenceData d, ui.Image photo, void Function(ui.Image) keep) async {
-    const cw = width - _pad * 2;
-    final ops = <void Function(Canvas)>[];
+    const w = width;
+    const cw = w - _pad * 2;
+    const padIn = 44.0;
+    const tw = cw - padIn * 2;
+    const white = Color(0xFFFFFFFF);
+    const white80 = Color(0xD9FFFFFF);
+    const white60 = Color(0xA6FFFFFF);
 
-    const brand = TextStyle(fontSize: 40, fontWeight: FontWeight.w800, color: C.ink, letterSpacing: -0.5);
-    const tag = TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: C.text2, letterSpacing: 2.5);
-    const title = TextStyle(fontSize: 68, fontWeight: FontWeight.w800, color: C.ink, letterSpacing: -1, height: 1.05);
-    const date = TextStyle(fontSize: 40, fontWeight: FontWeight.w600, color: C.ink, height: 1.2);
-    const label = TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: C.text2, letterSpacing: .5);
-    const value = TextStyle(fontSize: 42, fontWeight: FontWeight.w600, color: C.ink, height: 1.2);
-    const small = TextStyle(fontSize: 28, fontWeight: FontWeight.w500, color: C.text2, height: 1.3);
-    const pillStyle = TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: C.ink);
-
-    var y = _pad;
-
-    // 1. Identitas
-    final brandTp = _tp('SNOOP', brand, cw, maxLines: 1);
-    final tagTp = _tp('BUKTI ABSENSI PKL', tag, cw * .62, maxLines: 1, right: true);
-    final headY = y;
-    ops.add((c) {
-      _mark(c, Offset(_pad, headY), 64);
-      brandTp.paint(c, Offset(_pad + 80, headY + (64 - brandTp.height) / 2));
-      tagTp.paint(c, Offset(width - _pad - tagTp.width, headY + (64 - tagTp.height) / 2));
-    });
-    y += 64 + 40;
-
-    // 2. Foto utama: rasio dipertahankan, tidak di-crop
-    final aspect = photo.width / photo.height;
-    var pw = cw;
-    var ph = pw / aspect;
-    if (ph > _maxPhotoH) {
-      ph = _maxPhotoH;
-      pw = ph * aspect;
+    var h = w * photo.height / photo.width;
+    var src = Rect.fromLTWH(0, 0, photo.width.toDouble(), photo.height.toDouble());
+    if (h > _maxH) {
+      final keepH = photo.width * _maxH / w;
+      src = Rect.fromLTWH(0, (photo.height - keepH) / 2, photo.width.toDouble(), keepH);
+      h = _maxH;
     }
-    final photoRect = Rect.fromLTWH(_pad + (cw - pw) / 2, y, pw, ph);
-    ops.add((c) {
-      final rr = RRect.fromRectAndRadius(photoRect, const Radius.circular(36));
-      c.save();
-      c.clipRRect(rr, doAntiAlias: true);
-      c.drawImageRect(photo, Rect.fromLTWH(0, 0, photo.width.toDouble(), photo.height.toDouble()), photoRect,
-          Paint()..filterQuality = FilterQuality.high..isAntiAlias = true);
-      c.restore();
-      c.drawRRect(rr, Paint()..style = PaintingStyle.stroke..strokeWidth = 2..color = C.border);
-    });
-    y += ph + 48;
 
-    // 3. Judul + kehadiran
-    final titleTp = _tp(d.isOut ? 'Absen Pulang' : 'Absen Masuk', title, cw, maxLines: 1);
-    final presenceTp = _tp(d.presenceLabel, pillStyle, cw * .45, maxLines: 1);
-    final presenceW = presenceTp.width + 56;
-    final presenceBg = switch (d.presenceLabel) {
-      'Terlambat' => C.warningSoft,
-      'Perlu perhatian' => C.errorSoft,
-      _ => C.accent,
+    final title = _tp(d.isOut ? 'Absen Pulang' : 'Absen Masuk',
+        const TextStyle(fontSize: 76, fontWeight: FontWeight.w800, color: white, letterSpacing: -1, height: 1.05), tw * .72, maxLines: 1);
+    final time = _tp(hm(d.recordedAt), const TextStyle(fontSize: 44, fontWeight: FontWeight.w600, color: white80, height: 1.0), tw * .28, maxLines: 1);
+    final date = _tp('${dateLong(d.recordedAt)} · WIB', const TextStyle(fontSize: 34, fontWeight: FontWeight.w500, color: white80, height: 1.25), tw, maxLines: 1);
+    final loc = d.lat == null || d.lng == null
+        ? 'Lokasi tidak tersedia'
+        : (d.placeName ?? '${d.lat!.toStringAsFixed(5)}, ${d.lng!.toStringAsFixed(5)}');
+    final place = _tp(loc, const TextStyle(fontSize: 32, fontWeight: FontWeight.w500, color: white80, height: 1.25), tw, maxLines: 2);
+    final who = [d.studentName.trim(), if (d.school.trim().isNotEmpty) d.school.trim()].join(' · ');
+    final name = _tp(who, const TextStyle(fontSize: 34, fontWeight: FontWeight.w700, color: white, height: 1.25), tw, maxLines: 1);
+    final extra = [
+      if (d.timeFromDevice) 'Waktu dari jam perangkat',
+      if (d.reference != null) 'Ref. ${d.reference}',
+    ].join(' · ');
+    final extraTp = extra.isEmpty ? null : _tp(extra, const TextStyle(fontSize: 26, fontWeight: FontWeight.w500, color: white60, height: 1.2), tw, maxLines: 1);
+
+    final blockH = title.height + 6 + date.height + 18 + place.height + 6 + name.height + (extraTp == null ? 0 : 12 + extraTp.height);
+    final cardH = blockH + padIn * 2;
+    final cardRect = Rect.fromLTWH(_pad, h - _pad - cardH, cw, cardH);
+
+    final chipDot = switch (d.presenceLabel) {
+      'Terlambat' => C.warning,
+      'Perlu perhatian' => C.error,
+      'Hadir' => C.accent,
+      _ => white,
     };
-    final rowY = y;
-    ops.add((c) {
-      titleTp.paint(c, Offset(_pad, rowY));
-      final pr = RRect.fromRectAndRadius(
-          Rect.fromLTWH(width - _pad - presenceW, rowY + (titleTp.height - 64) / 2, presenceW, 64), const Radius.circular(32));
-      c.drawRRect(pr, Paint()..color = presenceBg);
-      presenceTp.paint(c, Offset(pr.left + 28, pr.top + (64 - presenceTp.height) / 2));
-    });
-    y += titleTp.height + 8;
+    final chip = _tp(d.presenceLabel, const TextStyle(fontSize: 30, fontWeight: FontWeight.w700, color: white), cw * .5, maxLines: 1);
+    final brand = _tp('SNOOP', const TextStyle(fontSize: 36, fontWeight: FontWeight.w800, color: white, letterSpacing: 1), cw * .4, maxLines: 1);
 
-    final dateTp = _tp('${dateLong(d.recordedAt)} · ${hm(d.recordedAt)} WIB', date, cw, maxLines: 2);
-    final dateY = y;
-    ops.add((c) => dateTp.paint(c, Offset(_pad, dateY)));
-    y += dateTp.height + 36;
-
-    void divider() {
-      final dy = y;
-      ops.add((c) => c.drawRect(Rect.fromLTWH(_pad, dy, cw, 2), Paint()..color = C.border));
-      y += 2 + 36;
-    }
-
-    divider();
-
-    // 4. Informasi absensi
-    final rows = <(String, String)>[
-      ('NAMA', d.studentName.trim()),
-      if (d.school.trim().isNotEmpty) ('SEKOLAH', d.school.trim()),
-      if (d.company.trim().isNotEmpty) ('TEMPAT PKL', d.company.trim()),
-      (
-        'LOKASI',
-        d.lat == null || d.lng == null
-            ? 'Lokasi tidak tersedia'
-            : '${d.placeName ?? 'Koordinat'}\n${d.lat!.toStringAsFixed(5)}, ${d.lng!.toStringAsFixed(5)}${d.accuracy == null ? '' : ' (±${d.accuracy!.round()} m)'}'
-      ),
-      if (d.photoTakenAt != null && d.photoTakenAt!.difference(d.recordedAt).inMinutes.abs() >= 1)
-        ('FOTO DIAMBIL', '${hm(d.photoTakenAt!)} WIB'),
-    ];
-    for (final (k, v) in rows) {
-      final kTp = _tp(k, label, cw, maxLines: 1);
-      final vTp = _tp(v, value, cw, maxLines: 4);
-      final ky = y;
-      ops.add((c) {
-        kTp.paint(c, Offset(_pad, ky));
-        vTp.paint(c, Offset(_pad, ky + kTp.height + 6));
-      });
-      y += kTp.height + 6 + vTp.height + 28;
-    }
-    y += 8;
-    divider();
-
-    // 5. Status pengiriman + referensi (bukan status verifikasi)
-    final subTp = _tp(d.submissionLabel, pillStyle, cw * .62, maxLines: 1);
-    final subW = subTp.width + 56;
-    final subBg = d.submissionConfirmed ? C.successSoft : C.accentSoft;
-    final subFg = d.submissionConfirmed ? C.success : C.ink;
-    final refTp = d.reference == null ? null : _tp('Ref. ${d.reference}', small.copyWith(fontWeight: FontWeight.w700), cw * .36, maxLines: 1, right: true);
-    final statusY = y;
-    ops.add((c) {
-      final pr = RRect.fromRectAndRadius(Rect.fromLTWH(_pad, statusY, subW, 64), const Radius.circular(32));
-      c.drawRRect(pr, Paint()..color = subBg);
-      final painter = _tp(d.submissionLabel, pillStyle.copyWith(color: subFg), cw * .62, maxLines: 1);
-      painter.paint(c, Offset(pr.left + 28, pr.top + (64 - painter.height) / 2));
-      if (refTp != null) refTp.paint(c, Offset(width - _pad - refTp.width, statusY + (64 - refTp.height) / 2));
-    });
-    y += 64 + 28;
-
-    final notes = <String>[
-      if (d.timeFromDevice) 'Waktu absen berasal dari jam perangkat (dikirim saat offline).',
-      'Status di atas berasal dari aplikasi SNOOP dan belum berarti diverifikasi oleh guru pembimbing.',
-    ];
-    final noteTp = _tp(notes.join('\n'), small, cw, maxLines: 5);
-    final noteY = y;
-    ops.add((c) => noteTp.paint(c, Offset(_pad, noteY)));
-    y += noteTp.height + 24;
-
-    final now = DateTime.now();
-    final footTp = _tp('Dibuat oleh SNOOP · diekspor ${now.day} ${kMonths[now.month - 1].substring(0, 3)} ${now.year}, ${hm(now)} WIB',
-        small.copyWith(fontSize: 24), cw, maxLines: 1);
-    final footY = y;
-    ops.add((c) => footTp.paint(c, Offset(_pad, footY)));
-    y += footTp.height + _pad;
-
-    final h = y.ceil();
+    final full = Rect.fromLTWH(0, 0, w, h);
     final rec = ui.PictureRecorder();
-    final canvas = Canvas(rec, Rect.fromLTWH(0, 0, width, h.toDouble()));
-    canvas.drawRect(Rect.fromLTWH(0, 0, width, h.toDouble()), Paint()..color = C.bg);
-    for (final op in ops) {
-      op(canvas);
-    }
+    final c = Canvas(rec, full);
+    c.drawImageRect(photo, src, full, Paint()..filterQuality = FilterQuality.high..isAntiAlias = true);
+
+    // Atas: status kehadiran (kapsul kaca, kiri) dan merek (kanan).
+    const chipH = 64.0;
+    final chipW = chip.width + 28 + 20 + 32;
+    _glass(c, photo, src, full, RRect.fromRectAndRadius(Rect.fromLTWH(_pad, _pad, chipW, chipH), const Radius.circular(chipH / 2)), tint: 0x40000000);
+    c.drawCircle(Offset(_pad + 28 + 8, _pad + chipH / 2), 8, Paint()..color = chipDot);
+    chip.paint(c, Offset(_pad + 28 + 20, _pad + (chipH - chip.height) / 2));
+    final brandW = brand.width + 56;
+    _glass(c, photo, src, full, RRect.fromRectAndRadius(Rect.fromLTWH(w - _pad - brandW, _pad, brandW, chipH), const Radius.circular(chipH / 2)), tint: 0x40000000);
+    brand.paint(c, Offset(w - _pad - brandW + 28, _pad + (chipH - brand.height) / 2));
+
+    // Bawah: kartu kaca melayang.
+    _glass(c, photo, src, full, RRect.fromRectAndRadius(cardRect, const Radius.circular(52)));
+    var y = cardRect.top + padIn;
+    final x = cardRect.left + padIn;
+    title.paint(c, Offset(x, y));
+    time.paint(c, Offset(x + title.width + 20, y + 10));
+    y += title.height + 6;
+    date.paint(c, Offset(x, y));
+    y += date.height + 18;
+    place.paint(c, Offset(x, y));
+    y += place.height + 6;
+    name.paint(c, Offset(x, y));
+    y += name.height;
+    if (extraTp != null) extraTp.paint(c, Offset(x, y + 12));
+
     final pic = rec.endRecording();
-    final image = await pic.toImage(width.toInt(), h);
+    final image = await pic.toImage(w.toInt(), h.ceil());
     keep(image);
     pic.dispose();
     final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
     if (data == null) throw const EvidenceException('Gambar bukti gagal dibuat. Coba lagi.');
     final rgba = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-    return compute(_encodeJpg, _JpgJob(width.toInt(), h, rgba));
+    return compute(_encodeJpg, _JpgJob(w.toInt(), h.ceil(), rgba));
   }
 }

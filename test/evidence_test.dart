@@ -29,4 +29,10 @@ void main() {
     expect(EvidenceService.submissionLabel(hasRecord: true, synced: false, signedIn: true), 'Menunggu sinkronisasi');
     expect(EvidenceService.submissionLabel(hasRecord: true, synced: false, signedIn: false), 'Tersimpan di perangkat');
   });
+
+  test('warna kehadiran: Terlambat/Perlu perhatian berbeda dari Hadir/Pulang', () {
+    expect(EvidenceService.presenceColor('Hadir'), EvidenceService.presenceColor('Pulang'));
+    expect(EvidenceService.presenceColor('Terlambat'), isNot(EvidenceService.presenceColor('Hadir')));
+    expect(EvidenceService.presenceColor('Perlu perhatian'), isNot(EvidenceService.presenceColor('Terlambat')));
+  });
 }

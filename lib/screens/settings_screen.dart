@@ -1,14 +1,16 @@
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import '../main.dart';
 import '../services/backend_service.dart';
+import '../services/island_service.dart';
+import '../services/system_bridge.dart';
 import '../services/launcher_service.dart';
 import '../services/notification_service.dart';
 import 'auth_screen.dart';
 import 'reminders_screen.dart';
-import '../core/models.dart';
 import '../core/state.dart';
 
 /// Pembungkus untuk dibuka dengan AppBar.
@@ -111,6 +113,42 @@ class SettingsView extends StatelessWidget {
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  /// Penyetel manual bila Island belum sejajar dengan kamera depan. Pilihan tersimpan di perangkat.
+  Future<void> _adjustIsland(BuildContext context) {
+    final c = IslandController.instance;
+    return showDialog<void>(
+      context: context,
+      barrierColor: Colors.transparent, // agar Island di atas tetap terlihat jelas
+      builder: (ctx) => AlertDialog(
+        title: const Text('Posisi Dynamic Island'),
+        content: ListenableBuilder(
+          listenable: c,
+          builder: (_, __) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Geser sampai pil sejajar dengan kamera depan.', style: TextStyle(fontSize: 13)),
+            const SizedBox(height: 12),
+            Text('Kiri – kanan (${c.dx.round()})', style: const TextStyle(fontWeight: FontWeight.w700)),
+            Slider(value: c.dx.clamp(-80.0, 80.0), min: -80, max: 80, divisions: 160, onChanged: (v) => c.setOffset(x: v)),
+            Text('Atas – bawah (${c.dy.round()})', style: const TextStyle(fontWeight: FontWeight.w700)),
+            Slider(value: c.dy.clamp(-24.0, 48.0), min: -24, max: 48, divisions: 72, onChanged: (v) => c.setOffset(y: v)),
+            Text('Ukuran bulatan (${c.idleAdj >= 0 ? '+' : ''}${c.idleAdj.round()})', style: const TextStyle(fontWeight: FontWeight.w700)),
+            Slider(value: c.idleAdj.clamp(-8.0, 12.0), min: -8, max: 12, divisions: 20, onChanged: c.setIdleAdj),
+          ]),
+        ),
+        actions: [
+          TextButton(onPressed: () {
+            c.setOffset(x: 0, y: 0);
+            c.setIdleAdj(0);
+          }, child: const Text('Setel ulang')),
+          TextButton(
+            onPressed: () => c.notify(IslandEvent('Contoh notifikasi', 'Begini tampilan banner di Dynamic Island.', icon: Icons.notifications_active_rounded)),
+            child: const Text('Contoh'),
+          ),
+          FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Selesai')),
+        ],
+      ),
+    );
+  }
+
   Widget _profileCard(BuildContext context, AppState s) {
     Widget info(IconData i, String t) => Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
@@ -158,6 +196,11 @@ class SettingsView extends StatelessWidget {
       group('Notifikasi'),
       row(Icons.notifications_none, 'Pengingat', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RemindersScreen()))),
       row(Icons.notifications_active_outlined, 'Uji Notifikasi', onTap: () async {
+        if (IslandController.instance.enabled) {
+          // Dengan Dynamic Island aktif, notifikasi SNOOP tampil di Island, bukan di bayangan notifikasi sistem.
+          IslandController.instance.notify(IslandEvent('SNOOP aktif', 'Notifikasi tampil di Dynamic Island.', icon: Icons.check_circle_rounded, color: kIslandMint));
+          return;
+        }
         try {
           await NotificationService.instance.showTest();
           if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Permintaan notifikasi dikirim. Periksa izin notifikasi perangkat.')));
@@ -165,6 +208,59 @@ class SettingsView extends StatelessWidget {
           if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Notifikasi belum dapat dijadwalkan di perangkat ini.')));
         }
       }),
+      group('Dynamic Island'),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: SnoopCard(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          child: ListenableBuilder(
+            listenable: IslandController.instance,
+            builder: (context, _) => SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(Icons.smart_button_rounded, size: 20),
+              title: const Text('Tampilkan Dynamic Island'),
+              subtitle: const Text('Pomodoro, musik, dan notifikasi di bagian atas layar.'),
+              value: IslandController.instance.enabled,
+              onChanged: IslandController.instance.setEnabled,
+            ),
+          ),
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: SnoopCard(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          child: ListenableBuilder(
+            listenable: IslandController.instance,
+            builder: (context, _) => SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(Icons.fullscreen_rounded, size: 20),
+              title: const Text('Sembunyikan status bar saat Island melebar'),
+              subtitle: const Text('Agar ikon Bluetooth, mode getar, dll. tidak menutupi Island. Bulatan diam tidak memerlukannya.'),
+              value: IslandController.instance.hideStatusBar,
+              onChanged: IslandController.instance.setHideStatusBar,
+            ),
+          ),
+        ),
+      ),
+      ListenableBuilder(
+        listenable: NowPlayingController.instance,
+        builder: (context, _) => row(Icons.sensors_rounded, 'Deteksi Spotify & panggilan WhatsApp',
+            trailing: NowPlayingController.instance.listenerEnabled ? 'Aktif' : 'Mati', onTap: SystemBridge.openListenerSettings),
+      ),
+      ListenableBuilder(
+        listenable: CallController.instance,
+        builder: (context, _) => row(Icons.layers_rounded, 'Tampil di atas aplikasi lain (panggilan WhatsApp)',
+            trailing: CallController.instance.overlayEnabled ? 'Aktif' : 'Mati', onTap: SystemBridge.openOverlaySettings),
+      ),
+      row(Icons.phone_in_talk_rounded, 'Uji kartu panggilan', onTap: () {
+        unawaited(SystemBridge.testCall());
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Kartu panggilan uji muncul dalam 5 detik. Keluar dari SNOOP (tombol Home) untuk menguji tampilan di atas aplikasi lain.'),
+          duration: Duration(seconds: 6),
+        ));
+      }),
+      row(Icons.open_with_rounded, 'Atur posisi & ukuran Dynamic Island', onTap: () => _adjustIsland(context)),
       group('Perangkat'),
       row(Icons.home_outlined, 'Jadikan launcher default', onTap: () => _makeDefault(context)),
       group('Tampilan'),

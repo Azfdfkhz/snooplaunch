@@ -12,6 +12,26 @@ class NotificationService {
   static final NotificationService instance = NotificationService._();
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   bool _ready = false;
+  bool _muted = false;
+
+  /// True saat aplikasi terbuka dan Dynamic Island yang menampilkan notifikasi (lihat [setForegroundMute]).
+  bool get muted => _muted;
+
+  /// Mematikan sementara notifikasi sistem (mute=true) atau menjadwalkannya lagi (mute=false).
+  /// Selama mute, [scheduleReminder] dan [scheduleOnce] tidak menjadwalkan apa pun; semuanya dijadwalkan
+  /// ulang dari [reminders] saat mute dicabut.
+  Future<void> setForegroundMute(bool mute, {required Iterable<Reminder> reminders, required int untilMin}) async {
+    if (_muted == mute) return;
+    await initialize();
+    _muted = mute;
+    if (mute) {
+      await _plugin.cancelAll();
+    } else {
+      for (final r in reminders.toList()) {
+        if (r.enabled) await scheduleReminder(r, untilMin: untilMin);
+      }
+    }
+  }
 
   Future<void> initialize() async {
     if (_ready) return;
@@ -53,6 +73,7 @@ class NotificationService {
   /// [cancelReminder] dengan nilai LAMA lebih dulu.
   Future<void> scheduleReminder(Reminder r, {required int untilMin}) async {
     await initialize();
+    if (_muted) return;
     final body = 'Saatnya ${r.title.toLowerCase()}';
     for (final t in _slots(r, untilMin)) {
       if (r.workdaysOnly) {
@@ -120,5 +141,29 @@ class NotificationService {
         channelDescription: 'Pengingat jadwal dan aktivitas harian',
         importance: Importance.high, priority: Priority.high,
       )));
+  }
+
+  static const _focusDetails = NotificationDetails(
+    android: AndroidNotificationDetails(
+      'snoop_focus', 'Fokus (Pomodoro)',
+      channelDescription: 'Pemberitahuan saat sesi fokus atau istirahat selesai',
+      importance: Importance.high, priority: Priority.high,
+    ),
+  );
+
+  /// Notifikasi sekali jalan pada waktu tertentu (dipakai timer Pomodoro). Pakai [cancelId] untuk membatalkan.
+  Future<void> scheduleOnce({required int id, required String title, required String body, required DateTime at}) async {
+    await initialize();
+    if (_muted || !at.isAfter(DateTime.now())) return;
+    await _plugin.zonedSchedule(
+      id, title, body, tz.TZDateTime.from(at, tz.local), _focusDetails,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
+  Future<void> cancelId(int id) async {
+    await initialize();
+    await _plugin.cancel(id);
   }
 }

@@ -70,3 +70,6 @@ setelah menerima `confirmed:true`.
   sebelum mengunggah. Jika unggah sukses tetapi database gagal, file yang baru dibuat dihapus kembali.
 - Detail error internal tidak dikirim ke klien dan URL file tidak ditulis ke log.
 - File di Drive tidak dibuat publik.
+
+## Migrasi 008 (absen ulang)
+Jalankan `migration_008_redo_attendance.sql` di SQL Editor agar tombol "Absen ulang" bisa membatalkan absensi hari ini di server. Tanpa migrasi ini, "Foto ulang" tetap berfungsi; "Absen ulang" akan menampilkan pesan gagal.
