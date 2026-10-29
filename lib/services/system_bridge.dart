@@ -50,6 +50,29 @@ class SystemBridge {
     } catch (_) {}
   }
 
+  static Map<String, dynamic>? _lastIsland;
+  static bool _islandSent = false;
+
+  /// Update 1.2.5: kirim spesifikasi pil Island ke native (digambar di atas aplikasi lain saat SNOOP tidak di layar).
+  /// null = matikan. Panggilan berulang dengan isi sama diabaikan.
+  static Future<void> pushIsland(Map<String, dynamic>? spec) async {
+    if (_islandSent && mapEquals(_lastIsland, spec)) return;
+    _islandSent = true;
+    _lastIsland = spec == null ? null : Map<String, dynamic>.from(spec);
+    try {
+      await _ch.invokeMethod('island', spec);
+    } catch (_) {}
+  }
+
+  /// True sekali bila pil native diketuk dan SNOOP diminta membuka hub Island.
+  static Future<bool> consumeHub() async {
+    try {
+      return await _ch.invokeMethod<bool>('consumeHub') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<void> openListenerSettings() async {
     try {
       await _ch.invokeMethod('openListenerSettings');

@@ -135,6 +135,14 @@ class MainActivity : FlutterActivity() {
                     val action = call.argument<String>("action") ?: ""
                     result.success(IslandBridge.callAction(action))
                 }
+                // Update 1.2.5: pil Island native di atas aplikasi lain. arguments = spesifikasi pil, atau null untuk mematikan.
+                "island" -> {
+                    @Suppress("UNCHECKED_CAST")
+                    val spec = call.arguments as? Map<String, Any?>
+                    IslandBridge.setIsland(spec)
+                    result.success(true)
+                }
+                "consumeHub" -> result.success(IslandBridge.consumePendingHub())
                 else -> result.notImplemented()
             }
         }

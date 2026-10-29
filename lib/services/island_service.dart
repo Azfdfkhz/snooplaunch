@@ -134,7 +134,16 @@ class IslandController extends ChangeNotifier {
   void attach(AppState s) {
     final first = _app == null;
     _app = s;
-    if (first) unawaited(_syncMute());
+    if (first) {
+      unawaited(_syncMute());
+      unawaited(_openHubIfRequested()); // Activity baru dibuka dari pil native
+    }
+  }
+
+  /// Update 1.2.5: pil Island native diketuk di aplikasi lain -> buka hub begitu SNOOP muncul.
+  Future<void> _openHubIfRequested() async {
+    final want = await SystemBridge.consumeHub();
+    if (want && enabled) openHub();
   }
 
   void onLifecycle(AppLifecycleState st) {
@@ -149,7 +158,10 @@ class IslandController extends ChangeNotifier {
         return; // bayangan notifikasi ditarik / dialog sistem: aplikasi masih terlihat
     }
     unawaited(_syncMute());
-    if (st == AppLifecycleState.resumed) unawaited(SystemBridge.refresh()); // izin mungkin baru diberikan di pengaturan
+    if (st == AppLifecycleState.resumed) {
+      unawaited(SystemBridge.refresh()); // izin mungkin baru diberikan di pengaturan
+      unawaited(_openHubIfRequested());
+    }
     unawaited(_applyChrome());
   }
 
@@ -294,6 +306,10 @@ class PomodoroController extends ChangeNotifier {
   Duration _left = const Duration(minutes: 25);
   Timer? _ticker;
   void Function(IslandEvent)? onEvent;
+
+  /// Untuk pil Island native (1.2.5): waktu akhir (epoch ms) saat berjalan, dan sisa waktu saat dijeda.
+  int? get endAtMs => _endAt?.millisecondsSinceEpoch;
+  int get leftMs => _left.inMilliseconds;
 
   Duration get total => Duration(minutes: switch (phase) {
         PomoPhase.focus => focusMin,

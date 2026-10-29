@@ -159,6 +159,7 @@ class _DynamicIslandState extends State<DynamicIsland> {
         builder: (ctx, _) {
           if (!s.onboarded || !_island.enabled) {
             _syncChrome(false);
+            _pushOverlay(null);
             return const SizedBox.shrink();
           }
           final mq = MediaQuery.of(ctx);
@@ -177,6 +178,7 @@ class _DynamicIslandState extends State<DynamicIsland> {
                           : _Mode.idle;
           // Selain bulatan diam, Island lebih lebar dari area di sekitar kamera: status bar sistem disembunyikan.
           _syncChrome(mode != _Mode.idle);
+          _pushOverlay(_overlaySpec(mq, a, pomoOn, musicOn));
           final compact = mode == _Mode.idle || mode == _Mode.live;
           // Pil ringkas menempel di kamera (bila tidak di tengah); mode lebar selalu di tengah layar.
           final ax = compact && a.camX != null ? (a.camX! / mq.size.width) * 2 - 1 : 0.0;
@@ -216,9 +218,74 @@ class _DynamicIslandState extends State<DynamicIsland> {
                   ),
                 ),
               ),
+              _bottomTabs(mq),
             ]),
           );
         },
+      ),
+    );
+  }
+
+  /// Update 1.2.5: spesifikasi pil untuk overlay native (digambar di atas aplikasi lain saat SNOOP tidak di layar).
+  /// Waktu Pomodoro dikirim sebagai waktu akhir, jadi native menghitungnya sendiri tanpa menunggu Flutter.
+  Map<String, dynamic> _overlaySpec(MediaQueryData mq, ({double top, double h, double? camX, double gap, double idle, double idleTop}) a,
+      bool pomoOn, bool musicOn) {
+    final dx = _island.dx;
+    final dy = _island.dy;
+    final camX = a.camX != null ? a.camX! + dx : (dx != 0 ? mq.size.width / 2 + dx : null);
+    return {
+      if (camX != null) 'camX': camX,
+      'top': a.top + dy,
+      'idleTop': a.idleTop + dy,
+      'h': a.h,
+      'gap': a.gap,
+      'idle': a.idle,
+      'pomo': pomoOn,
+      'music': musicOn,
+      if (pomoOn) ...{
+        'pomoColor': _pomo.phaseColor.toARGB32(),
+        'pomoRun': _pomo.running,
+        'pomoEnd': _pomo.endAtMs ?? 0,
+        'pomoTotal': _pomo.total.inMilliseconds,
+        'pomoLeft': _pomo.leftMs,
+      },
+      if (!pomoOn && musicOn) 'musicText': _musicTitle(),
+    };
+  }
+
+  void _pushOverlay(Map<String, dynamic>? spec) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(SystemBridge.pushIsland(spec)));
+  }
+
+  /// Update 1.2.5: tombol tab Fokus / Musik / Info berupa deretan tombol bulat yang mengambang di bawah layar,
+  /// terpisah dari pil. Meluncur naik dengan pantulan saat hub terbuka dan turun saat ditutup. Tersembunyi saat keyboard terbuka.
+  Widget _bottomTabs(MediaQueryData mq) {
+    const tabs = [
+      (Icons.timer_rounded, 'Fokus'),
+      (Icons.music_note_rounded, 'Musik'),
+      (Icons.notifications_rounded, 'Info'),
+    ];
+    final show = _island.hubOpen && mq.viewInsets.bottom <= 0;
+    final safe = math.max(mq.viewPadding.bottom, mq.padding.bottom);
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 520),
+      curve: show ? _spring : Curves.easeInCubic,
+      left: 0,
+      right: 0,
+      bottom: show ? safe + 20 : -90.0,
+      child: ExcludeSemantics(
+        excluding: !show,
+        child: IgnorePointer(
+          ignoring: !show,
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            for (var i = 0; i < tabs.length; i++) ...[
+              if (i > 0) const SizedBox(width: 12),
+              _BottomTabBtn(icon: tabs[i].$1, label: tabs[i].$2, active: _island.tab == i, onTap: () => _island.setTab(i)),
+            ],
+            const SizedBox(width: 20),
+            _RoundBtn(icon: Icons.close_rounded, size: 54, bg: Colors.black, fg: Colors.white, tooltipLabel: 'Tutup', onTap: _island.closeHub),
+          ]),
+        ),
       ),
     );
   }
@@ -441,58 +508,6 @@ class _DynamicIslandState extends State<DynamicIsland> {
 
   // ------------------------------------------------------------ Hub
 
-  /// Pemilih tab bergaya segmen: latar kapsul dengan penanda putih yang meluncur (dengan pantulan) ke tab terpilih,
-  /// warna ikon + teks berubah halus.
-  Widget _tabBar() {
-    const tabs = [
-      (Icons.timer_rounded, 'Fokus'),
-      (Icons.music_note_rounded, 'Musik'),
-      (Icons.notifications_rounded, 'Info'),
-    ];
-    return LayoutBuilder(builder: (context, c) {
-      final w = c.maxWidth / tabs.length;
-      return Container(
-        height: 40,
-        decoration: BoxDecoration(color: const Color(0x1AFFFFFF), borderRadius: BorderRadius.circular(20)),
-        child: Stack(children: [
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 380),
-            curve: _spring,
-            left: w * _island.tab + 3,
-            top: 3,
-            width: w - 6,
-            height: 34,
-            child: DecoratedBox(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(17))),
-          ),
-          Row(children: [
-            for (var i = 0; i < tabs.length; i++)
-              Expanded(
-                child: _Tap(
-                  pressedScale: .94,
-                  haptic: true,
-                  onTap: () => _island.setTab(i),
-                  child: SizedBox(
-                    height: 40,
-                    child: Center(
-                      child: TweenAnimationBuilder<Color?>(
-                        tween: ColorTween(end: _island.tab == i ? Colors.black : Colors.white),
-                        duration: const Duration(milliseconds: 240),
-                        builder: (_, col, __) => Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(tabs[i].$1, size: 16, color: col),
-                          const SizedBox(width: 5),
-                          Text(tabs[i].$2, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: col)),
-                        ]),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ]),
-        ]),
-      );
-    });
-  }
-
   Widget _hub(BuildContext context, AppState s) {
     final body = switch (_island.tab) {
       0 => _focusTab(),
@@ -501,14 +516,8 @@ class _DynamicIslandState extends State<DynamicIsland> {
     };
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          Expanded(child: _tabBar()),
-          const SizedBox(width: 10),
-          _RoundBtn(icon: Icons.keyboard_arrow_up_rounded, size: 40, bg: const Color(0x1FFFFFFF), fg: Colors.white, tooltipLabel: 'Tutup', onTap: _island.closeHub),
-        ]),
-        const SizedBox(height: 16),
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 260),
           layoutBuilder: (current, previous) => Stack(
@@ -931,6 +940,40 @@ class _RoundBtn extends StatelessWidget {
               ),
               child: Icon(icon, key: ValueKey<int>(icon.codePoint), color: fg, size: size * .52),
             ),
+          ),
+        ),
+      );
+}
+
+/// Tombol tab bulat 54 dp di bawah layar (Update 1.2.5): tab aktif putih, lainnya hitam.
+class _BottomTabBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  const _BottomTabBtn({required this.icon, required this.label, required this.active, required this.onTap});
+  @override
+  Widget build(BuildContext context) => Semantics(
+        button: true,
+        selected: active,
+        label: label,
+        excludeSemantics: true,
+        child: _Tap(
+          pressedScale: .9,
+          haptic: true,
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOut,
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: active ? Colors.white : Colors.black,
+              border: Border.all(color: active ? Colors.transparent : const Color(0x33FFFFFF)),
+              boxShadow: const [BoxShadow(color: Color(0x59000000), blurRadius: 18, offset: Offset(0, 6))],
+            ),
+            child: Icon(icon, size: 24, color: active ? Colors.black : Colors.white),
           ),
         ),
       );

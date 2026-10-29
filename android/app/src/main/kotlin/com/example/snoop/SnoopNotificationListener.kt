@@ -35,6 +35,10 @@ object IslandBridge {
     @Volatile var appVisible: Boolean = false
         private set // ubah lewat setAppVisible(); setter otomatis akan bentrok dengan fungsi itu di JVM
     @Volatile var appContext: Context? = null
+    /** Diset IslandOverlay saat pil diketuk; dibaca saat SNOOP terbuka untuk membuka hub Island. */
+    @Volatile var pendingHub: Boolean = false
+    /** Spesifikasi pil Island terakhir dari Flutter (geometri, Pomodoro, musik). null = pil dimatikan. */
+    @Volatile var islandSpec: Map<String, Any?>? = null
     private var dismissedKey: String? = null
 
     fun emitCall(m: Map<String, Any?>?) {
@@ -58,13 +62,39 @@ object IslandBridge {
         main.post { syncOverlay() }
     }
 
-    /** Menampilkan / menyembunyikan overlay sesuai keadaan sekarang. Hanya dipanggil dari thread utama. */
+    /** Dari Flutter: perbarui pil Island yang digambar di atas aplikasi lain (null = matikan). */
+    fun setIsland(spec: Map<String, Any?>?) {
+        main.post {
+            islandSpec = spec
+            syncOverlay()
+        }
+    }
+
+    /** True sekali bila pil native diketuk (SNOOP diminta membuka hub Island); langsung direset. */
+    fun consumePendingHub(): Boolean {
+        val v = pendingHub
+        pendingHub = false
+        return v
+    }
+
+    /**
+     * Menampilkan / menyembunyikan overlay sesuai keadaan sekarang. Hanya dipanggil dari thread utama.
+     * Kartu panggilan WhatsApp menimpa pil Island selama panggilan; selain itu pil tampil saat SNOOP tidak di layar.
+     */
     fun syncOverlay() {
         val ctx = appContext ?: return
         val info = lastCall
         val key = info?.get("key") as? String
-        val want = info != null && key != null && !appVisible && key != dismissedKey && CallOverlay.canDraw(ctx)
-        if (want) CallOverlay.show(ctx, info!!) else CallOverlay.hide()
+        val canDraw = CallOverlay.canDraw(ctx)
+        val wantCall = info != null && key != null && !appVisible && key != dismissedKey && canDraw
+        if (wantCall) {
+            IslandOverlay.hide(false)
+            CallOverlay.show(ctx, info!!)
+            return
+        }
+        CallOverlay.hide()
+        val spec = islandSpec
+        if (spec != null && !appVisible && canDraw) IslandOverlay.show(ctx, spec) else IslandOverlay.hide()
     }
 
     /** Menyembunyikan overlay untuk panggilan ini saja (geser ke atas / setelah tombol ditekan). */
