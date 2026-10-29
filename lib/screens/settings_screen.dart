@@ -10,6 +10,7 @@ import '../services/system_bridge.dart';
 import '../services/launcher_service.dart';
 import '../services/notification_service.dart';
 import 'auth_screen.dart';
+import 'connect_desktop_screen.dart';
 import 'reminders_screen.dart';
 import '../core/state.dart';
 
@@ -262,6 +263,7 @@ class SettingsView extends StatelessWidget {
       }),
       row(Icons.open_with_rounded, 'Atur posisi & ukuran Dynamic Island', onTap: () => _adjustIsland(context)),
       group('Perangkat'),
+      row(Icons.desktop_windows_outlined, 'Connect to Desktop', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ConnectDesktopScreen()))),
       row(Icons.home_outlined, 'Jadikan launcher default', onTap: () => _makeDefault(context)),
       group('Tampilan'),
       row(Icons.brightness_6_outlined, 'Tema', trailing: s.theme, onTap: () => _chooseTheme(context)),

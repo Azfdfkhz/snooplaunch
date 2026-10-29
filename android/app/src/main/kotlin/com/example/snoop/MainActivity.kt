@@ -2,7 +2,9 @@ package com.example.snoop
 
 import android.app.role.RoleManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -23,6 +25,9 @@ class MainActivity : FlutterActivity() {
     private var systemChannel: MethodChannel? = null
     private var pendingHomeResult: MethodChannel.Result? = null
     private val homeRequestCode = 4242
+    // Connect to Desktop: berbagi layar ke SnoopUX Desktop (MirrorSession + MirrorService).
+    private var mirrorChannel: MethodChannel? = null
+    private val mirrorRequestCode = 4343
 
     private fun isHomeDefault(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
@@ -88,6 +93,7 @@ class MainActivity : FlutterActivity() {
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         IslandBridge.channel = null
+        MirrorSession.channel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
@@ -188,11 +194,39 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        mirrorChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "snoop/mirror")
+        MirrorSession.channel = mirrorChannel
+        mirrorChannel!!.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "connect" -> {
+                    val host = call.argument<String>("host")
+                    val port = call.argument<Int>("port") ?: 47821
+                    val code = call.argument<String>("code")
+                    if (host.isNullOrBlank() || code.isNullOrBlank()) {
+                        result.error("bad_args", "host dan code wajib diisi", null)
+                    } else {
+                        MirrorSession.begin(applicationContext, host, port, code) { requestMirrorPermission() }
+                        result.success(true)
+                    }
+                }
+                "stop" -> { MirrorSession.stop(true); result.success(true) }
+                "state" -> result.success(MirrorSession.state)
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun requestMirrorPermission() {
+        val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        startActivityForResult(mpm.createScreenCaptureIntent(), mirrorRequestCode)
     }
 
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == mirrorRequestCode) MirrorSession.onProjectionResult(applicationContext, resultCode, data)
         if (requestCode == homeRequestCode) {
             pendingHomeResult?.success(if (isHomeDefault()) "granted" else "declined")
             pendingHomeResult = null

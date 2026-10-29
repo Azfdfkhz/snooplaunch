@@ -7,6 +7,7 @@ import 'core/theme.dart';
 import 'screens/shell.dart';
 import 'screens/splash_screen.dart';
 import 'services/island_service.dart';
+import 'services/mirror_service.dart';
 
 class AppScope extends InheritedNotifier<AppState> {
   const AppScope({super.key, required AppState state, required super.child}) : super(notifier: state);
@@ -30,6 +31,7 @@ Future<void> main() async {
   final state = AppState();
   await state.load(); // hanya membaca penyimpanan lokal, cepat
   await IslandController.instance.load(); // preferensi Dynamic Island + statistik Pomodoro (lokal)
+  MirrorService.instance.init(); // jembatan status berbagi layar (Connect to Desktop)
   runApp(AppScope(state: state, child: const SnoopApp()));
   // Backend, notifikasi, dan sinkronisasi berjalan setelah UI tampil.
   unawaited(state.startBackground());
