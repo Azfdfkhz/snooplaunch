@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
+import '../core/braun.dart';
 import '../core/models.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
@@ -136,7 +137,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           const SizedBox(height: 8),
           ListTile(contentPadding: EdgeInsets.zero, title: Text('Waktu mulai: ${time.format(ctx)}'), trailing: const Icon(Icons.schedule),
               onTap: () async { final t = await showTimePicker(context: ctx, initialTime: time); if (t != null) setD(() => time = t); }),
-          Align(alignment: Alignment.centerLeft, child: Text('Hanya berlaku untuk ${dateLong(_sel)}.', style: const TextStyle(fontSize: 12, color: C.text2))),
+          Align(alignment: Alignment.centerLeft, child: Text('Hanya berlaku untuk ${dateLong(_sel)}.', style: TextStyle(fontSize: 12, color: C.text2))),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
@@ -185,8 +186,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           ),
           if (it.date != null)
             ListTile(
-              leading: const Icon(Icons.delete_outline, color: C.error),
-              title: const Text('Hapus kegiatan ini', style: TextStyle(color: C.error)),
+              leading: Icon(Icons.delete_outline, color: C.error),
+              title: Text('Hapus kegiatan ini', style: TextStyle(color: C.error)),
               onTap: () {
                 Navigator.pop(ctx);
                 _confirmDelete(s, it);
@@ -235,7 +236,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   ]),
                   const SizedBox(height: S.x3),
                   if (list.isEmpty)
-                    const Text('Belum ada bukti.', style: TextStyle(color: C.text2))
+                    Text('Belum ada bukti.', style: TextStyle(color: C.text2))
                   else
                     for (final e in list) _evidenceTile(s, e),
                 ]),
@@ -248,7 +249,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   Widget _addChip(IconData icon, String label, VoidCallback onTap) => ActionChip(
-        avatar: Icon(icon, size: 18, color: C.ink),
+        avatar: Icon(icon, size: 18, color: C.fg),
         label: Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
         onPressed: onTap,
         backgroundColor: C.soft,
@@ -269,7 +270,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     };
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: C.ink),
+      leading: Icon(icon, color: C.fg),
       title: Text(e.label, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(kindLabel, style: Theme.of(context).textTheme.bodySmall),
       onTap: () => _openEvidence(e),
@@ -361,7 +362,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   StatusChip _statusChip(ScheduleStatus st) => switch (st) {
         ScheduleStatus.completed => StatusChip('Selesai', bg: C.successSoft, fg: C.success, icon: Icons.check_circle_rounded),
-        ScheduleStatus.inProgress => StatusChip('Berlangsung', bg: C.accent, fg: C.ink, icon: Icons.play_arrow_rounded),
+        ScheduleStatus.inProgress => StatusChip('Berlangsung', bg: C.accent, fg: Colors.white, icon: Icons.play_arrow_rounded),
         ScheduleStatus.skipped => StatusChip('Dilewati', bg: C.soft, fg: C.text2, icon: Icons.skip_next_rounded),
         ScheduleStatus.cancelled => StatusChip('Dibatalkan', bg: C.soft, fg: C.text2, icon: Icons.cancel_outlined),
         ScheduleStatus.missed => StatusChip('Terlewat', bg: C.warningSoft, fg: C.warning, icon: Icons.history_rounded),
@@ -409,7 +410,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         child: FloatingActionButton(
           tooltip: 'Tambah kegiatan',
           onPressed: _add,
-          backgroundColor: C.accent, foregroundColor: C.ink, shape: const CircleBorder(),
+          backgroundColor: C.accent, foregroundColor: Colors.white, shape: const CircleBorder(),
           child: const Icon(Icons.add),
         ),
       ),
@@ -429,14 +430,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: S.x2),
               child: Column(children: [
-                Text(dateLong(_sel), textAlign: TextAlign.center, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: C.text)),
+                Text(dateLong(_sel), textAlign: TextAlign.center, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: C.text)),
                 Text(isToday ? 'Hari ini · ketuk untuk pilih tanggal' : 'Ketuk untuk pilih tanggal', style: Theme.of(context).textTheme.bodySmall),
               ]),
             ),
           ),
         ),
         if (!isToday)
-          TextButton(onPressed: () => _move(today), style: TextButton.styleFrom(minimumSize: const Size(48, 48)), child: const Text('Hari ini', style: TextStyle(fontWeight: FontWeight.w800, color: C.ink))),
+          TextButton(onPressed: () => _move(today), style: TextButton.styleFrom(minimumSize: const Size(48, 48)), child: Text('Hari ini', style: TextStyle(fontWeight: FontWeight.w800, color: C.fg))),
         IconButton(tooltip: 'Hari berikutnya', onPressed: () => _move(_sel.add(const Duration(days: 1))), icon: const Icon(Icons.chevron_right_rounded)),
       ]),
     );
@@ -454,12 +455,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 decoration: BoxDecoration(
                   color: _same(d, _sel) ? C.accent : Colors.transparent,
                   borderRadius: BorderRadius.circular(16),
-                  border: _same(d, today) && !_same(d, _sel) ? Border.all(color: C.ink, width: 1.5) : null,
+                  border: _same(d, today) && !_same(d, _sel) ? Border.all(color: C.fg, width: 1.5) : null,
                 ),
                 child: Column(children: [
-                  Text(kDaysShort[d.weekday - 1], style: TextStyle(fontSize: 11, color: _same(d, _sel) ? C.ink : C.text2)),
+                  Text(kDaysShort[d.weekday - 1], style: TextStyle(fontSize: 11, color: _same(d, _sel) ? Colors.white : C.text2)),
                   const SizedBox(height: 2),
-                  Text('${d.day}', style: TextStyle(fontWeight: FontWeight.w800, color: _same(d, _sel) ? C.ink : C.text)),
+                  Text('${d.day}', style: TextStyle(fontWeight: FontWeight.w800, color: _same(d, _sel) ? Colors.white : C.text)),
                   const SizedBox(height: 4),
                   _attendanceDot(s, d, today),
                 ]),
@@ -481,7 +482,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   Widget _segment() => Container(
         padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(color: C.soft, borderRadius: BorderRadius.circular(30)),
+        decoration: BoxDecoration(color: B.well, borderRadius: BorderRadius.circular(30), border: Border.all(color: B.hair)),
         child: Row(children: [
           for (final (i, label) in ['Harian', 'Mingguan'].indexed)
             Expanded(
@@ -491,7 +492,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   decoration: BoxDecoration(color: (_weekly ? 1 : 0) == i ? C.accent : Colors.transparent, borderRadius: BorderRadius.circular(26)),
-                  child: Center(child: Text(label, style: TextStyle(fontWeight: FontWeight.w700, color: (_weekly ? 1 : 0) == i ? C.ink : C.text2))),
+                  child: Center(child: Text(label, style: TextStyle(fontWeight: FontWeight.w700, color: (_weekly ? 1 : 0) == i ? Colors.white : C.text2))),
                 ),
               ),
             ),
@@ -523,7 +524,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   Padding(
                     padding: const EdgeInsets.only(right: S.x2),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.attach_file_rounded, size: 16, color: C.text2),
+                      Icon(Icons.attach_file_rounded, size: 16, color: C.text2),
                       Text('${s.evidenceFor(it.id, _sel).length}', style: Theme.of(context).textTheme.bodySmall),
                     ]),
                   ),
@@ -544,13 +545,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         color: C.soft,
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(children: [
-            const Icon(Icons.fingerprint_rounded, color: C.text2),
+            Icon(Icons.fingerprint_rounded, color: C.text2),
             const SizedBox(width: S.x3),
             Expanded(child: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600))),
           ]),
           if (canMark) ...[
             const SizedBox(height: S.x3),
-            const Text('Tandai tanggal ini sebagai:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: C.text2)),
+            Text('Tandai tanggal ini sebagai:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: C.text2)),
             const SizedBox(height: S.x2),
             Row(children: [
               Expanded(
@@ -558,7 +559,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   onPressed: () => _setPast(s, preset: 'hadir'),
                   icon: const Icon(Icons.how_to_reg_rounded, size: 18),
                   label: const Text('Hadir', style: TextStyle(fontWeight: FontWeight.w800)),
-                  style: FilledButton.styleFrom(backgroundColor: C.accent, foregroundColor: C.ink, shape: const StadiumBorder()),
+                  style: FilledButton.styleFrom(backgroundColor: C.accent, foregroundColor: Colors.white, shape: const StadiumBorder()),
                 ),
               ),
               const SizedBox(width: S.x2),
@@ -567,7 +568,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   onPressed: () => _setPast(s, preset: 'izin'),
                   icon: const Icon(Icons.event_busy_outlined, size: 18),
                   label: const Text('Izin', style: TextStyle(fontWeight: FontWeight.w800)),
-                  style: OutlinedButton.styleFrom(foregroundColor: C.ink, shape: const StadiumBorder()),
+                  style: OutlinedButton.styleFrom(foregroundColor: C.fg, shape: const StadiumBorder()),
                 ),
               ),
               const SizedBox(width: S.x2),
@@ -576,13 +577,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   onPressed: () => _setPast(s, preset: 'sakit'),
                   icon: const Icon(Icons.medical_services_outlined, size: 18),
                   label: const Text('Sakit', style: TextStyle(fontWeight: FontWeight.w800)),
-                  style: OutlinedButton.styleFrom(foregroundColor: C.ink, shape: const StadiumBorder()),
+                  style: OutlinedButton.styleFrom(foregroundColor: C.fg, shape: const StadiumBorder()),
                 ),
               ),
             ]),
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton(onPressed: () => _setPast(s, preset: 'lainnya'), child: const Text('Alasan lain', style: TextStyle(fontWeight: FontWeight.w700, color: C.ink))),
+              child: TextButton(onPressed: () => _setPast(s, preset: 'lainnya'), child: Text('Alasan lain', style: TextStyle(fontWeight: FontWeight.w700, color: C.fg))),
             ),
           ],
         ]),
@@ -596,7 +597,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             onPressed: () => _setPast(s),
             icon: const Icon(Icons.edit_calendar_rounded, size: 18),
             label: const Text('Ubah status', style: TextStyle(fontWeight: FontWeight.w800)),
-            style: OutlinedButton.styleFrom(foregroundColor: C.ink, shape: const StadiumBorder()),
+            style: OutlinedButton.styleFrom(foregroundColor: C.fg, shape: const StadiumBorder()),
           ),
         );
     if (a.status == AttendanceStatus.leave) {
@@ -648,7 +649,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   child: Text('${kDays[d.weekday - 1]}\n${d.day} ${kMonths[d.month - 1].substring(0, 3)}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
                 ),
                 Expanded(child: Text(_weekSummary(s, d, today), style: Theme.of(context).textTheme.bodySmall)),
-                const Icon(Icons.chevron_right, size: 18, color: C.text2),
+                Icon(Icons.chevron_right, size: 18, color: C.text2),
               ]),
             ),
           ),
@@ -670,7 +671,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               alignment: Alignment.centerRight,
               child: FilledButton(
                 onPressed: _saveNote,
-                style: FilledButton.styleFrom(backgroundColor: C.accent, foregroundColor: C.ink, shape: const StadiumBorder()),
+                style: FilledButton.styleFrom(backgroundColor: C.accent, foregroundColor: Colors.white, shape: const StadiumBorder()),
                 child: const Text('Simpan catatan', style: TextStyle(fontWeight: FontWeight.w800)),
               ),
             ),

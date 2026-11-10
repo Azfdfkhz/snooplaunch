@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/braun.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
@@ -78,10 +79,10 @@ class _RemindersViewState extends State<RemindersView> {
                   showCheckmark: false,
                   onSelected: (_) => setD(() => interval = m),
                   selectedColor: C.accent,
-                  backgroundColor: C.soft,
-                  side: BorderSide.none,
-                  shape: const StadiumBorder(),
-                  labelStyle: TextStyle(fontWeight: FontWeight.w700, color: interval == m ? C.ink : C.text2),
+                  backgroundColor: B.cap,
+                  side: BorderSide(color: interval == m ? B.orangeLo : B.hair),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  labelStyle: TextStyle(fontWeight: FontWeight.w700, color: interval == m ? Colors.white : C.text2),
                 ),
             ]),
             SwitchListTile(
@@ -91,7 +92,7 @@ class _RemindersViewState extends State<RemindersView> {
               onChanged: (v) => setD(() => workdays = v),
             ),
             if (interval > 0)
-              const Text('Pengingat berulang sampai jam pulang hari itu.', style: TextStyle(fontSize: 12, color: C.text2)),
+              Text('Pengingat berulang sampai jam pulang hari itu.', style: TextStyle(fontSize: 12, color: C.text2)),
           ]),
         ),
         actions: [
@@ -147,7 +148,7 @@ class _RemindersViewState extends State<RemindersView> {
                         alignment: Alignment.centerRight,
                         padding: const EdgeInsets.only(right: S.x5),
                         decoration: BoxDecoration(color: C.errorSoft, borderRadius: BorderRadius.circular(R.small)),
-                        child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
                           Text('Hapus', style: TextStyle(fontWeight: FontWeight.w700, color: C.error)),
                           SizedBox(width: S.x2),
                           Icon(Icons.delete_outline, color: C.error),

@@ -4,6 +4,9 @@ import android.app.role.RoleManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
+import android.view.WindowManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.graphics.Bitmap
@@ -143,6 +146,25 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "consumeHub" -> result.success(IslandBridge.consumePendingHub())
+                // Update 1.2.8: status bar kustom di dalam SNOOP butuh level baterai.
+                "battery" -> {
+                    val i = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                    val level = i?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                    val scale = i?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+                    val status = i?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+                    val charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+                    result.success(mapOf("level" to (if (level >= 0 && scale > 0) level * 100 / scale else -1), "charging" to charging))
+                }
+                // Update 1.2.8: kecerahan penuh saat QR absen ditampilkan (true) dan kembali normal (false).
+                "maxBrightness" -> {
+                    val on = call.argument<Boolean>("on") == true
+                    runOnUiThread {
+                        val lp = window.attributes
+                        lp.screenBrightness = if (on) 1f else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                        window.attributes = lp
+                    }
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }

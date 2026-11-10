@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import '../main.dart' show AppScope;
 import '../services/island_service.dart';
+import '../services/status_service.dart';
 import '../services/system_bridge.dart';
+import 'braun.dart';
 import 'media_models.dart';
 import 'models.dart';
 import 'state.dart';
@@ -48,11 +50,13 @@ class _DynamicIslandState extends State<DynamicIsland> {
   @override
   void initState() {
     super.initState();
+    StatusInfo.instance.start(); // Update 1.2.8: data jam/jaringan/baterai untuk status bar kustom
     _remTimer = Timer.periodic(const Duration(seconds: 20), (_) => _checkReminders());
   }
 
   @override
   void dispose() {
+    StatusInfo.instance.stop();
     _remTimer?.cancel();
     super.dispose();
   }
@@ -199,6 +203,7 @@ class _DynamicIslandState extends State<DynamicIsland> {
                   ),
                 ),
               ),
+              if (_island.hideStatusBar) _statusBar(mq, a),
               AnimatedPositioned(
                 duration: _dur,
                 curve: Curves.easeOutCubic, // tanpa pantulan agar tidak menembus tepi layar
@@ -242,6 +247,10 @@ class _DynamicIslandState extends State<DynamicIsland> {
       'idle': a.idle,
       'pomo': pomoOn,
       'music': musicOn,
+      // Update 1.2.8: bar hitam penutup status bar sistem di aplikasi lain, berisi jam/jaringan/baterai kustom.
+      'bar': _island.hideStatusBar,
+      'barH': math.max(math.max(mq.viewPadding.top, mq.padding.top), a.idleTop + dy + a.idle + 6),
+      'barCy': a.idleTop + dy + a.idle / 2,
       if (pomoOn) ...{
         'pomoColor': _pomo.phaseColor.toARGB32(),
         'pomoRun': _pomo.running,
@@ -255,6 +264,64 @@ class _DynamicIslandState extends State<DynamicIsland> {
 
   void _pushOverlay(Map<String, dynamic>? spec) {
     WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(SystemBridge.pushIsland(spec)));
+  }
+
+  /// Update 1.2.8: status bar kustom di dalam SNOOP. Status bar sistem disembunyikan; jam di satu sisi kamera, jaringan +
+  /// baterai di sisi lain, sejajar dengan Island supaya tidak saling menutupi. Berupa kapsul hitam sehingga terbaca di
+  /// latar terang maupun gelap. Tidak menerima sentuhan.
+  Widget _statusBar(MediaQueryData mq, ({double top, double h, double? camX, double gap, double idle, double idleTop}) a) {
+    const h = 22.0;
+    final w = mq.size.width;
+    final cy = a.idleTop + _island.dy + a.idle / 2;
+    final camX = a.camX == null ? null : a.camX! + _island.dx;
+    final camLeft = camX != null && camX < w * .35;
+    final camRight = camX != null && camX > w * .65;
+    return Positioned(
+      top: math.max(0.0, cy - h / 2),
+      left: 0,
+      right: 0,
+      height: h,
+      child: ExcludeSemantics(
+        child: IgnorePointer(
+          child: ListenableBuilder(
+            listenable: StatusInfo.instance,
+            builder: (_, __) {
+              final st = StatusInfo.instance;
+              const txt = TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700, height: 1, fontFeatures: [FontFeature.tabularFigures()]);
+              Widget chip(Widget child) => Container(
+                    height: h,
+                    padding: const EdgeInsets.symmetric(horizontal: 9),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(color: const Color(0xE6000000), borderRadius: BorderRadius.circular(h / 2)),
+                    child: child,
+                  );
+              final clock = chip(Text(st.clock, style: txt));
+              final netIcon = switch (st.net) {
+                NetKind.wifi => Icons.wifi_rounded,
+                NetKind.mobile => Icons.signal_cellular_alt_rounded,
+                NetKind.none => Icons.wifi_off_rounded,
+              };
+              final icons = chip(Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(netIcon, size: 14, color: st.net == NetKind.none ? const Color(0x99FFFFFF) : Colors.white),
+                if (st.battery >= 0) ...[
+                  const SizedBox(width: 6),
+                  Text('${st.battery}', style: txt),
+                ],
+                const SizedBox(width: 4),
+                _BatteryGlyph(level: st.battery, charging: st.charging),
+              ]));
+              final both = Row(mainAxisSize: MainAxisSize.min, children: [clock, const SizedBox(width: 6), icons]);
+              final Widget left = camLeft ? const SizedBox.shrink() : (camRight ? both : clock);
+              final Widget right = camLeft ? both : (camRight ? const SizedBox.shrink() : icons);
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [left, right]),
+              );
+            },
+          ),
+        ),
+      ),
+    );
   }
 
   /// Update 1.2.5: tombol tab Fokus / Musik / Info berupa deretan tombol bulat yang mengambang di bawah layar,
@@ -283,7 +350,7 @@ class _DynamicIslandState extends State<DynamicIsland> {
               _BottomTabBtn(icon: tabs[i].$1, label: tabs[i].$2, active: _island.tab == i, onTap: () => _island.setTab(i)),
             ],
             const SizedBox(width: 20),
-            _RoundBtn(icon: Icons.close_rounded, size: 54, bg: Colors.black, fg: Colors.white, tooltipLabel: 'Tutup', onTap: _island.closeHub),
+            _RoundBtn(icon: Icons.close_rounded, size: 54, bg: B.screen, fg: Colors.white, tooltipLabel: 'Tutup', onTap: _island.closeHub),
           ]),
         ),
       ),
@@ -385,7 +452,8 @@ class _DynamicIslandState extends State<DynamicIsland> {
             width: width,
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
-              color: Colors.black,
+              color: B.screen,
+              border: Border.all(color: const Color(0x26FFFFFF)),
               borderRadius: BorderRadius.circular(radius),
               boxShadow: mode == _Mode.idle ? const [] : [BoxShadow(color: Color(compact ? 0x1A000000 : 0x52000000), blurRadius: compact ? 8 : 26, offset: Offset(0, compact ? 2 : 10))],
             ),
@@ -569,8 +637,7 @@ class _DynamicIslandState extends State<DynamicIsland> {
               builder: (_, v, __) => CustomPaint(size: const Size(156, 156), painter: _RingPainter(v, color, const Color(0x26FFFFFF), 9)),
             ),
             Column(mainAxisSize: MainAxisSize.min, children: [
-              Text(mmss(p.remaining),
-                  style: const TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.w800, letterSpacing: -1, fontFeatures: [FontFeature.tabularFigures()])),
+              SegmentDisplay(mmss(p.remaining), height: 40, color: const Color(0xFFE8EBDD)),
               Text(p.running ? 'Berjalan' : (p.active ? 'Dijeda' : 'Siap'), style: const TextStyle(color: Color(0xB3FFFFFF), fontSize: 12)),
             ]),
           ]),
@@ -621,11 +688,11 @@ class _DynamicIslandState extends State<DynamicIsland> {
                           duration: const Duration(milliseconds: 240),
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                           decoration: BoxDecoration(
-                            color: p.focusMin == preset.$1 ? Colors.white : const Color(0x1FFFFFFF),
+                            color: p.focusMin == preset.$1 ? B.orange : const Color(0x1FFFFFFF),
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: Text('${preset.$1} / ${preset.$2}',
-                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: p.focusMin == preset.$1 ? Colors.black : Colors.white)),
+                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Colors.white)),
                         ),
                       ),
                     ),
@@ -678,7 +745,7 @@ class _DynamicIslandState extends State<DynamicIsland> {
           height: 56,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            gradient: const LinearGradient(colors: [kIslandPink, Color(0xFF8E7CFA)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+            gradient: const LinearGradient(colors: [B.orangeHi, B.orangeLo], begin: Alignment.topLeft, end: Alignment.bottomRight),
           ),
           child: const Icon(Icons.music_note_rounded, color: Colors.white, size: 28),
         ),
@@ -703,7 +770,7 @@ class _DynamicIslandState extends State<DynamicIsland> {
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         _RoundBtn(icon: Icons.skip_previous_rounded, size: 48, bg: const Color(0x1FFFFFFF), fg: Colors.white, tooltipLabel: 'Sebelumnya', onTap: m.previous),
         const SizedBox(width: 16),
-        _RoundBtn(icon: m.playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 64, bg: Colors.white, fg: Colors.black, tooltipLabel: m.playing ? 'Jeda' : 'Putar', onTap: m.toggle),
+        _RoundBtn(icon: m.playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 64, bg: B.orange, fg: Colors.white, tooltipLabel: m.playing ? 'Jeda' : 'Putar', onTap: m.toggle),
         const SizedBox(width: 16),
         _RoundBtn(icon: Icons.skip_next_rounded, size: 48, bg: const Color(0x1FFFFFFF), fg: Colors.white, tooltipLabel: 'Berikutnya', onTap: m.next),
       ]),
@@ -969,11 +1036,11 @@ class _BottomTabBtn extends StatelessWidget {
             height: 54,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: active ? Colors.white : Colors.black,
-              border: Border.all(color: active ? Colors.transparent : const Color(0x33FFFFFF)),
+              color: active ? B.orange : B.screen,
+              border: Border.all(color: active ? B.orangeLo : const Color(0x33FFFFFF)),
               boxShadow: const [BoxShadow(color: Color(0x59000000), blurRadius: 18, offset: Offset(0, 6))],
             ),
-            child: Icon(icon, size: 24, color: active ? Colors.black : Colors.white),
+            child: Icon(icon, size: 24, color: Colors.white),
           ),
         ),
       );
@@ -993,11 +1060,11 @@ class _PillBtn extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 220),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(color: subtle ? const Color(0x1FFFFFFF) : Colors.white, borderRadius: BorderRadius.circular(24)),
+          decoration: BoxDecoration(color: subtle ? const Color(0x1FFFFFFF) : B.orange, borderRadius: BorderRadius.circular(24)),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 18, color: subtle ? Colors.white : Colors.black),
+            Icon(icon, size: 18, color: Colors.white),
             const SizedBox(width: 6),
-            Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: subtle ? Colors.white : Colors.black)),
+            Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white)),
           ]),
         ),
       );
@@ -1284,7 +1351,7 @@ class _NowPlayingCardState extends State<_NowPlayingCard> {
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           _RoundBtn(icon: Icons.skip_previous_rounded, size: 46, bg: const Color(0x1FFFFFFF), fg: Colors.white, tooltipLabel: 'Sebelumnya', onTap: _np.previous),
           const SizedBox(width: 16),
-          _RoundBtn(icon: np.playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 60, bg: Colors.white, fg: Colors.black, tooltipLabel: np.playing ? 'Jeda' : 'Putar', onTap: _np.toggle),
+          _RoundBtn(icon: np.playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 60, bg: B.orange, fg: Colors.white, tooltipLabel: np.playing ? 'Jeda' : 'Putar', onTap: _np.toggle),
           const SizedBox(width: 16),
           _RoundBtn(icon: Icons.skip_next_rounded, size: 46, bg: const Color(0x1FFFFFFF), fg: Colors.white, tooltipLabel: 'Berikutnya', onTap: _np.next),
         ]),
@@ -1304,7 +1371,7 @@ class _ArtFallback extends StatelessWidget {
   const _ArtFallback();
   @override
   Widget build(BuildContext context) => const DecoratedBox(
-        decoration: BoxDecoration(gradient: LinearGradient(colors: [kIslandPink, Color(0xFF8E7CFA)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+        decoration: BoxDecoration(gradient: LinearGradient(colors: [B.orangeHi, B.orangeLo], begin: Alignment.topLeft, end: Alignment.bottomRight)),
         child: Center(child: Icon(Icons.music_note_rounded, color: Colors.white, size: 28)),
       );
 }
@@ -1390,6 +1457,43 @@ class _LyricsView extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Ikon baterai kecil untuk status bar kustom: isi mengikuti level; hijau saat mengisi daya, merah saat <= 15%.
+class _BatteryGlyph extends StatelessWidget {
+  final int level;
+  final bool charging;
+  const _BatteryGlyph({required this.level, required this.charging});
+
+  @override
+  Widget build(BuildContext context) {
+    final fill = charging
+        ? const Color(0xFF5BD6A0)
+        : (level >= 0 && level <= 15)
+            ? const Color(0xFFFF5A5F)
+            : Colors.white;
+    final f = level < 0 ? 0.0 : (level.clamp(0, 100) / 100.0);
+    return SizedBox(
+      width: 24,
+      height: 12,
+      child: Row(children: [
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(1.6),
+            decoration: BoxDecoration(border: Border.all(color: const Color(0xCCFFFFFF), width: 1.1), borderRadius: BorderRadius.circular(3.5)),
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: f.clamp(0.04, 1.0),
+              heightFactor: 1,
+              child: DecoratedBox(decoration: BoxDecoration(color: fill, borderRadius: BorderRadius.circular(1.5))),
+            ),
+          ),
+        ),
+        const SizedBox(width: 1),
+        Container(width: 1.6, height: 4.5, decoration: BoxDecoration(color: const Color(0xCCFFFFFF), borderRadius: BorderRadius.circular(1))),
+      ]),
     );
   }
 }

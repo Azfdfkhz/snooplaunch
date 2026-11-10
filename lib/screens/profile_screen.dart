@@ -11,7 +11,7 @@ class ProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
     Widget info(IconData i, String t) => Padding(padding: const EdgeInsets.symmetric(vertical: 5), child: Row(children: [Icon(i, size: 16, color: C.text2), const SizedBox(width: 10), Expanded(child: Text(t, style: const TextStyle(fontSize: 13)))]));
-    Widget item(IconData i, String t, VoidCallback f) => Padding(padding: const EdgeInsets.only(bottom: 6), child: SnoopCard(onTap: f, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14), child: Row(children: [Icon(i, size: 20), const SizedBox(width: 12), Expanded(child: Text(t)), const Icon(Icons.chevron_right, size: 18, color: C.text2)])));
+    Widget item(IconData i, String t, VoidCallback f) => Padding(padding: const EdgeInsets.only(bottom: 6), child: SnoopCard(onTap: f, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14), child: Row(children: [Icon(i, size: 20), const SizedBox(width: 12), Expanded(child: Text(t)), Icon(Icons.chevron_right, size: 18, color: C.text2)])));
     void openSettings() => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
     return ListView(padding: const EdgeInsets.all(16), children: [
       const PageTitle('Profil', icon: Icons.person_outline_rounded),

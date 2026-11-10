@@ -64,6 +64,24 @@ class SystemBridge {
     } catch (_) {}
   }
 
+  /// Update 1.2.8: level baterai (0-100, -1 bila tidak diketahui) dan status mengisi daya. null di luar Android.
+  static Future<({int level, bool charging})?> battery() async {
+    try {
+      final m = await _ch.invokeMapMethod<String, dynamic>('battery');
+      if (m == null) return null;
+      return (level: (m['level'] as num?)?.toInt() ?? -1, charging: m['charging'] == true);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Update 1.2.8: kecerahan layar penuh selama QR absen ditampilkan. false = kembali ke kecerahan sistem.
+  static Future<void> maxBrightness(bool on) async {
+    try {
+      await _ch.invokeMethod('maxBrightness', {'on': on});
+    } catch (_) {}
+  }
+
   /// True sekali bila pil native diketuk dan SNOOP diminta membuka hub Island.
   static Future<bool> consumeHub() async {
     try {

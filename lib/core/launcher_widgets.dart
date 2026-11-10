@@ -77,10 +77,11 @@ class AppIcon extends StatelessWidget {
 class AppTile extends StatelessWidget {
   final AppEntry app;
   final double iconSize;
-  final Color labelColor;
+  final Color? _labelColor;
+  Color get labelColor => _labelColor ?? C.onNight2; // mengikuti tema
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
-  const AppTile({super.key, required this.app, this.iconSize = 52, this.labelColor = C.onNight2, this.onTap, this.onLongPress});
+  const AppTile({super.key, required this.app, this.iconSize = 52, Color? labelColor, this.onTap, this.onLongPress}) : _labelColor = labelColor;
   @override
   Widget build(BuildContext context) => Semantics(
         button: true,

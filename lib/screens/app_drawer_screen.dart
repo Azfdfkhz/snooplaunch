@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/braun.dart';
 import '../core/launcher_widgets.dart';
 import '../core/theme.dart';
 import '../main.dart';
@@ -113,7 +114,7 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
 
     Widget sectionTitle(String t) => Padding(
           padding: const EdgeInsets.fromLTRB(S.x5, S.x5, S.x5, S.x2),
-          child: Text(t, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: C.onNight)),
+          child: Text(t, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: C.onNight)),
         );
 
     Widget message({required IconData icon, required String text, String? action, VoidCallback? onAction}) => Padding(
@@ -121,12 +122,12 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Icon(icon, size: 40, color: C.onNight2),
             const SizedBox(height: S.x3),
-            Text(text, textAlign: TextAlign.center, style: const TextStyle(color: C.onNight2, fontSize: 14, height: 1.35)),
+            Text(text, textAlign: TextAlign.center, style: TextStyle(color: C.onNight2, fontSize: 14, height: 1.35)),
             if (action != null) ...[
               const SizedBox(height: S.x4),
               FilledButton(
                 onPressed: onAction,
-                style: FilledButton.styleFrom(backgroundColor: C.accent, foregroundColor: C.ink, minimumSize: const Size(48, 48), shape: const StadiumBorder()),
+                style: FilledButton.styleFrom(backgroundColor: C.accent, foregroundColor: Colors.white, minimumSize: const Size(48, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                 child: Text(action, style: const TextStyle(fontWeight: FontWeight.w800)),
               ),
             ],
@@ -173,7 +174,7 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
                   tooltip: 'Kembali ke beranda',
                   onPressed: widget.onClose ?? () => Navigator.of(context).maybePop(),
                   style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
-                  icon: const Icon(Icons.chevron_right_rounded, color: C.onNight, size: 28),
+                  icon: Icon(Icons.chevron_right_rounded, color: C.onNight, size: 28),
                 ),
               ]),
             ),
@@ -185,18 +186,19 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
                 controller: _search,
                 onChanged: (v) => setState(() => _q = v),
                 textInputAction: TextInputAction.search,
-                style: const TextStyle(color: C.onNight),
+                style: TextStyle(color: B.lcdInk),
                 cursorColor: C.accent,
                 decoration: InputDecoration(
                   hintText: 'Cari aplikasi...',
-                  hintStyle: const TextStyle(color: C.onNight2),
-                  prefixIcon: const Icon(Icons.search_rounded, size: 22, color: C.onNight2),
-                  suffixIcon: _q.isEmpty ? null : IconButton(tooltip: 'Hapus pencarian', icon: const Icon(Icons.close_rounded, color: C.onNight2), onPressed: () { _search.clear(); setState(() => _q = ''); }),
+                  hintStyle: const TextStyle(color: Color(0xFF55584E)),
+                  prefixIcon: Icon(Icons.search_rounded, size: 22, color: B.lcdInk),
+                  suffixIcon: _q.isEmpty ? null : IconButton(tooltip: 'Hapus pencarian', icon: Icon(Icons.close_rounded, color: B.lcdInk), onPressed: () { _search.clear(); setState(() => _q = ''); }),
                   filled: true,
-                  fillColor: C.nightSurface,
+                  fillColor: B.lcd,
                   contentPadding: const EdgeInsets.symmetric(vertical: S.x3),
-                  border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(R.pill)), borderSide: BorderSide.none),
-                  focusedBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(R.pill)), borderSide: BorderSide(color: C.accent, width: 1.5)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(18)), borderSide: BorderSide(color: B.hair)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(18)), borderSide: BorderSide(color: B.hair)),
+                  focusedBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(18)), borderSide: BorderSide(color: C.accent, width: 2)),
                 ),
               ),
             ),
@@ -215,10 +217,12 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
                         showCheckmark: false,
                         onSelected: (_) => setState(() { _category = c; _search.clear(); _q = ''; }),
                         selectedColor: C.accent,
-                        backgroundColor: C.nightSurface,
-                        side: BorderSide.none,
-                        shape: const StadiumBorder(),
-                        labelStyle: TextStyle(fontWeight: FontWeight.w700, color: !searching && category == c ? C.ink : C.onNight2),
+                        backgroundColor: B.cap,
+                        side: BorderSide(color: !searching && category == c ? B.orangeLo : B.hair),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        elevation: !searching && category == c ? 0 : 1,
+                        shadowColor: Colors.black54,
+                        labelStyle: TextStyle(fontWeight: FontWeight.w800, color: !searching && category == c ? Colors.white : C.ink),
                       ),
                     ),
                 ]),

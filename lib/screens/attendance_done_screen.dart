@@ -11,7 +11,14 @@ import '../main.dart';
 import '../services/capture_service.dart';
 import '../services/evidence_service.dart';
 import 'attendance_fix.dart';
+
 import 'attendance_share.dart';
+
+// Layar Absensi Tercatat selalu berlatar kertas terang (palet M), jadi warnanya tetap di tema gelap.
+const _kErrSoft = Color(0xFFF5D8D4);
+const _kOkSoft = Color(0xFFD9EBDF);
+const _kWarnSoft = Color(0xFFF7E2CC);
+const _kPeach = Color(0xFFF9DFD2);
 
 /// Tampil setelah absensi dicatat. Menampilkan tiga status yang berbeda dan tidak boleh disamakan:
 /// (1) absensi (metadata) di server, (2) foto di Google Drive, (3) gambar bukti yang dibagikan.
@@ -122,12 +129,12 @@ class _AttendanceDoneScreenState extends State<AttendanceDoneScreen> {
 
   Widget _errorBox(String text, {List<Widget> actions = const []}) => Container(
         padding: const EdgeInsets.all(S.x3),
-        decoration: BoxDecoration(color: C.errorSoft, borderRadius: BorderRadius.circular(R.small)),
+        decoration: BoxDecoration(color: _kErrSoft, borderRadius: BorderRadius.circular(R.small)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Icon(Icons.error_outline_rounded, size: 20, color: C.error),
+            Icon(Icons.error_outline_rounded, size: 20, color: M.bad),
             const SizedBox(width: S.x2),
-            Expanded(child: Text(text, style: const TextStyle(fontSize: 13.5, color: C.text))),
+            Expanded(child: Text(text, style: TextStyle(fontSize: 13.5, color: M.ink))),
           ]),
           ...actions,
         ]),
@@ -138,7 +145,7 @@ class _AttendanceDoneScreenState extends State<AttendanceDoneScreen> {
     if (m == null) return const SizedBox.shrink();
     if (m.inCloud) {
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const StatusChip('Foto tersimpan di Drive', bg: C.successSoft, fg: C.success, icon: Icons.cloud_done_outlined),
+        StatusChip('Foto tersimpan di Drive', bg: _kOkSoft, fg: M.ok, icon: Icons.cloud_done_outlined),
         const SizedBox(height: S.x1),
         const Text('Salinan foto di perangkat sudah dihapus. Foto dilihat dari cloud di Memories.', style: TextStyle(fontSize: 12.5, color: G.text2)),
       ]);
@@ -160,7 +167,7 @@ class _AttendanceDoneScreenState extends State<AttendanceDoneScreen> {
           canRetry
               ? 'Absensi sudah dicatat. Foto hanya disimpan sementara; jika halaman ini ditutup sebelum berhasil, foto dihapus dari perangkat dan perlu diambil ulang saat koneksi tersedia.'
               : 'Foto sudah tidak ada di perangkat. Ambil foto baru saat koneksi tersedia.',
-          style: const TextStyle(fontSize: 12.5, color: C.text2),
+          style: TextStyle(fontSize: 12.5, color: M.muted),
         ),
         if (canRetry)
           Align(
@@ -169,7 +176,7 @@ class _AttendanceDoneScreenState extends State<AttendanceDoneScreen> {
               onPressed: _upload,
               icon: const Icon(Icons.refresh_rounded, size: 18),
               label: const Text('Coba Unggah Lagi', style: TextStyle(fontWeight: FontWeight.w700)),
-              style: TextButton.styleFrom(foregroundColor: C.ink),
+              style: TextButton.styleFrom(foregroundColor: M.ink),
             ),
           ),
       ],
@@ -215,11 +222,11 @@ class _AttendanceDoneScreenState extends State<AttendanceDoneScreen> {
                 Wrap(spacing: S.x2, runSpacing: S.x2, children: [
                   StatusChip(
                     subLabel,
-                    bg: synced ? C.successSoft : C.accentSoft,
-                    fg: synced ? C.success : C.ink,
+                    bg: synced ? _kOkSoft : _kPeach,
+                    fg: synced ? M.ok : M.ink,
                     icon: synced ? Icons.cloud_done_outlined : Icons.hourglass_top_rounded,
                   ),
-                  if (a != null && a.offlineTime) const StatusChip('Waktu dari perangkat', bg: C.warningSoft, fg: C.warning, icon: Icons.watch_later_rounded),
+                  if (a != null && a.offlineTime) StatusChip('Waktu dari perangkat', bg: _kWarnSoft, fg: M.warn, icon: Icons.watch_later_rounded),
                 ]),
                 const SizedBox(height: S.x2),
                 const Text('Tercatat di server belum berarti diverifikasi guru pembimbing.', style: note),

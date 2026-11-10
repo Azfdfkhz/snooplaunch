@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../core/braun.dart';
 import '../core/launcher_widgets.dart';
 import '../core/memory_photo.dart';
 import '../core/models.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
+import '../services/qr_store.dart';
+import 'qr_screen.dart';
 import '../core/widgets.dart';
 import '../main.dart';
 import '../services/launcher_service.dart';
@@ -42,8 +45,12 @@ class _HomeScreenState extends State<HomeScreen> {
       Padding(
         padding: const EdgeInsets.fromLTRB(S.x4, S.x2, S.x4, S.x4),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _Tick(builder: (ctx, now) => _attendanceWidget(ctx, s)),
-          ..._serverAlert(context, s),
+          if (s.schoolMode)
+            _schoolQrCard(context)
+          else ...[
+            _Tick(builder: (ctx, now) => _attendanceWidget(ctx, s)),
+            ..._serverAlert(context, s),
+          ],
           const SizedBox(height: S.x3),
           _Tick(builder: (ctx, now) => _scheduleAndMemories(ctx, s, now)),
           const SizedBox(height: S.x3),
@@ -74,46 +81,40 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _panel(BuildContext context, DateTime now, AppState s) {
     final top = MediaQuery.paddingOf(context).top;
-    return ClipPath(
-      clipper: const OrganicPanelClipper(cut: 64),
-      child: Container(
-        color: C.accent,
+    // Posisi mengikuti versi lama: panel penuh lebar dengan sudut kanan-bawah terpotong organik,
+    // logo kiri-atas, tombol cari kanan-atas, jam besar di kiri, identitas di kiri-bawah.
+    // Detail mengikuti Braun: badan plastik, jendela LCD 7-segmen, knob oranye, kisi speaker.
+    return _OrganicDevice(
+      cut: 64,
+      child: Padding(
         padding: EdgeInsets.fromLTRB(S.x6, top + S.x3, S.x6, S.x6),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            const SnoopMark(size: 28, top: C.ink, bottom: Colors.white, dot: C.ink),
+            SnoopMark(size: 28, top: C.ink, bottom: B.orange, dot: C.ink),
             const SizedBox(width: S.x2),
-            const Text('SNOOP', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 1.5, color: C.ink)),
-            const Spacer(),
-            Tooltip(
-              message: 'Cari di Google',
-              child: Semantics(
-                button: true,
-                label: 'Cari di Google',
-                excludeSemantics: true,
-                child: Material(
-                  color: C.ink,
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: () => showGoogleSearch(context),
-                    child: const SizedBox(width: 48, height: 48, child: Icon(Icons.search_rounded, color: Colors.white, size: 26)),
-                  ),
-                ),
-              ),
-            ),
+            Text('SNOOP', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 2, color: C.ink)),
+            const SizedBox(width: S.x2),
+            _modeChip(s),
+            const SizedBox(width: S.x2),
+            const Expanded(child: SpeakerGrille(height: 22)),
+            const SizedBox(width: S.x3),
+            BraunKnob(icon: Icons.search_rounded, size: 48, tooltip: 'Cari di Google', onTap: () => showGoogleSearch(context)),
           ]),
           const SizedBox(height: S.x6),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(hm(now), style: const TextStyle(fontSize: 84, fontWeight: FontWeight.w900, color: C.ink, height: 1, letterSpacing: -3)),
+          // Jam besar rata kiri di dalam jendela LCD (lebar mengikuti isi, tidak menyentuh potongan kanan-bawah).
+          IntrinsicWidth(
+            child: LcdWell(
+              radius: 16,
+              padding: const EdgeInsets.fromLTRB(S.x4, S.x3, S.x4, S.x3),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: SegmentDisplay(hm(now), height: 84)),
+                const SizedBox(height: S.x2),
+                Text(dateLong(now), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: B.lcdInk)),
+              ]),
+            ),
           ),
-          const SizedBox(height: S.x2),
-          Text(dateLong(now), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: C.ink)),
           const SizedBox(height: S.x6),
-          // Identitas ditaruh di sisi kiri-bawah, di luar area yang terpotong lengkung.
-          // Ketuk nama untuk membuka profil (tombol profil di kanan atas diganti pencarian Google).
+          // Identitas di sisi kiri-bawah, di luar area yang terpotong lengkung. Ketuk nama untuk membuka profil.
           FractionallySizedBox(
             widthFactor: .42,
             alignment: Alignment.centerLeft,
@@ -124,14 +125,17 @@ class _HomeScreenState extends State<HomeScreen> {
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () => widget.onGoTo(5),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(greeting(now), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: C.ink)),
-                  Row(children: [
-                    Flexible(child: Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.ink))),
-                    const SizedBox(width: 2),
-                    const Icon(Icons.chevron_right_rounded, size: 20, color: C.ink),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(greeting(now), style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: C.text2)),
+                    Row(children: [
+                      Flexible(child: Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.ink))),
+                      const SizedBox(width: 2),
+                      Icon(Icons.chevron_right_rounded, size: 20, color: C.ink),
+                    ]),
                   ]),
-                ]),
+                ),
               ),
             ),
           ),
@@ -141,6 +145,79 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ---------------------------------------------------------------- Widget absensi
+
+  /// Update 1.2.8: kapsul mode di header (tutup tombol timbul Braun). Ketuk untuk berpindah PKL <-> Sekolah.
+  Widget _modeChip(AppState s) => Semantics(
+        button: true,
+        label: 'Mode ${s.schoolMode ? 'Sekolah' : 'PKL'}. Ketuk untuk berpindah mode',
+        excludeSemantics: true,
+        child: Container(
+          decoration: braunCap(radius: 18),
+          child: Material(
+            type: MaterialType.transparency,
+            borderRadius: BorderRadius.circular(18),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () => s.setMode(s.schoolMode ? 'pkl' : 'sekolah'),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 44),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(s.schoolMode ? Icons.school_rounded : Icons.work_rounded, size: 16, color: B.orange),
+                    const SizedBox(width: 5),
+                    Text(s.schoolMode ? 'Sekolah' : 'PKL', style: TextStyle(color: C.ink, fontWeight: FontWeight.w800, fontSize: 12.5)),
+                    const SizedBox(width: 2),
+                    Icon(Icons.swap_horiz_rounded, size: 16, color: C.text2),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+  /// Update 1.2.8: kartu QR Absen untuk mode Sekolah (menggantikan kartu absensi foto PKL).
+  Widget _schoolQrCard(BuildContext context) => ListenableBuilder(
+        listenable: QrStore.instance,
+        builder: (context, _) {
+          final store = QrStore.instance;
+          if (!store.loaded) store.load();
+          final n = store.items.length;
+          final sub = n == 0 ? 'Belum ada QR. Ketuk untuk menyimpan.' : (n == 1 ? 'Ketuk untuk menampilkan.' : '$n QR tersimpan. Ketuk untuk memilih.');
+          return Container(
+            decoration: braunBody(radius: R.widget),
+            child: Material(
+              type: MaterialType.transparency,
+              borderRadius: BorderRadius.circular(R.widget),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(R.widget),
+                onTap: () => _push(n == 1 ? QrViewerScreen(qr: store.items.first) : const QrScreen()),
+                child: Padding(
+                  padding: const EdgeInsets.all(S.x4),
+                  child: Row(children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: braunLcd(radius: 14),
+                      child: Icon(Icons.qr_code_2_rounded, size: 36, color: B.lcdInk),
+                    ),
+                    const SizedBox(width: S.x3),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('QR Absen Sekolah', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: C.ink)),
+                        const SizedBox(height: 2),
+                        Text(sub, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: C.text2)),
+                      ]),
+                    ),
+                    const Icon(Icons.chevron_right_rounded, color: B.orange),
+                  ]),
+                ),
+              ),
+            ),
+          );
+        },
+      );
 
   Widget _attendanceWidget(BuildContext context, AppState s) {
     final now = DateTime.now();
@@ -178,11 +255,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Container(
       padding: const EdgeInsets.all(S.x5),
-      decoration: BoxDecoration(color: C.nightSurface, borderRadius: BorderRadius.circular(R.widget)),
+      decoration: braunBody(radius: R.widget),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Absensi hari ini', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.onNight, letterSpacing: -.2)),
+        Text('Absensi hari ini', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.onNight, letterSpacing: -.2)),
         const SizedBox(height: S.x1),
-        Text('Jam kerja ${minToHm(s.workStartMin)} – ${minToHm(s.workEndFor(now))}', style: const TextStyle(fontSize: 13, color: C.onNight2)),
+        Text('Jam kerja ${minToHm(s.workStartMin)} – ${minToHm(s.workEndFor(now))}', style: TextStyle(fontSize: 13, color: C.onNight2)),
         const SizedBox(height: S.x3),
         Wrap(spacing: S.x3, runSpacing: S.x2, crossAxisAlignment: WrapCrossAlignment.center, children: [
           StatusChip(chipText, bg: chipBg, fg: chipFg, icon: chipIcon),
@@ -194,11 +271,11 @@ class _HomeScreenState extends State<HomeScreen> {
         if (waitMsg != null)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: S.x4, vertical: S.x3),
-            decoration: BoxDecoration(color: C.nightSurface, borderRadius: BorderRadius.circular(R.small)),
+            decoration: braunLcd(radius: R.small),
             child: Row(children: [
-              const Icon(Icons.schedule_rounded, size: 18, color: C.accent),
+              const Icon(Icons.schedule_rounded, size: 18, color: B.orangeLo),
               const SizedBox(width: S.x2),
-              Expanded(child: Text(waitMsg, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: C.onNight))),
+              Expanded(child: Text(waitMsg, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: B.lcdInk))),
             ]),
           ),
         if (waitMsg == null)
@@ -210,10 +287,11 @@ class _HomeScreenState extends State<HomeScreen> {
             label: Text(actionLabel, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
             style: FilledButton.styleFrom(
               backgroundColor: C.accent,
-              foregroundColor: C.ink,
-              disabledBackgroundColor: const Color(0xFF4A4946),
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: B.well,
               disabledForegroundColor: C.onNight2,
-              shape: const StadiumBorder(),
+              side: const BorderSide(color: B.orangeLo),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
             ),
           ),
         ),
@@ -313,10 +391,7 @@ class _HomeScreenState extends State<HomeScreen> {
       button: true,
       label: label,
       excludeSemantics: true,
-      child: Material(
-        color: C.nightSurface,
-        borderRadius: BorderRadius.circular(R.widget),
-        clipBehavior: Clip.antiAlias,
+      child: _Device(
         child: InkWell(
           onTap: () => widget.onGoTo(2),
           child: Padding(
@@ -325,25 +400,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     const Icon(Icons.event_available_rounded, color: C.accent, size: 26),
                     const Spacer(),
-                    Text(total == 0 ? 'Belum ada jadwal' : 'Tidak ada kegiatan berikutnya', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: C.onNight)),
+                    Text(total == 0 ? 'Belum ada jadwal' : 'Tidak ada kegiatan berikutnya', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: C.onNight)),
                     const SizedBox(height: S.x1),
-                    Text(total == 0 ? 'Ketuk untuk menambah' : '${s.tasksDone}/$total selesai', style: const TextStyle(fontSize: 12, color: C.onNight2)),
+                    Text(total == 0 ? 'Ketuk untuk menambah' : '${s.tasksDone}/$total selesai', style: TextStyle(fontSize: 12, color: C.onNight2)),
                   ])
                 : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     live
-                        ? const StatusChip('Berlangsung', bg: C.accent, fg: C.ink, icon: Icons.play_arrow_rounded)
-                        : const Row(mainAxisSize: MainAxisSize.min, children: [
+                        ? StatusChip('Berlangsung', bg: C.accentSoft, fg: B.orangeLo, icon: Icons.play_arrow_rounded)
+                        : Row(mainAxisSize: MainAxisSize.min, children: [
                             Icon(Icons.schedule_rounded, size: 16, color: C.accent),
                             SizedBox(width: 4),
                             Text('Berikutnya', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: C.onNight2)),
                           ]),
                     const SizedBox(height: S.x2),
-                    Text(next.timeLabel, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: C.onNight, height: 1, letterSpacing: -.5)),
+                    Align(alignment: Alignment.centerLeft, child: LcdWell(radius: 10, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), child: SegmentDisplay(next.timeLabel, height: 22))),
                     const SizedBox(height: S.x1),
-                    Text(next.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: C.onNight, height: 1.2)),
-                    if (next.place.isNotEmpty) Text(next.place, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: C.onNight2)),
+                    Text(next.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: C.onNight, height: 1.2)),
+                    if (next.place.isNotEmpty) Text(next.place, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: C.onNight2)),
                     const Spacer(),
-                    Text('${s.tasksDone}/$total selesai', style: const TextStyle(fontSize: 12, color: C.onNight2)),
+                    Text('${s.tasksDone}/$total selesai', style: TextStyle(fontSize: 12, color: C.onNight2)),
                   ]),
           ),
         ),
@@ -358,17 +433,13 @@ class _HomeScreenState extends State<HomeScreen> {
       button: true,
       label: m == null ? 'Memories: belum ada dokumentasi' : 'Memories: ${m.title}',
       excludeSemantics: true,
-      child: Material(
-        color: C.nightSurface,
-        borderRadius: BorderRadius.circular(R.widget),
-        clipBehavior: Clip.antiAlias,
+      child: _Device(
         child: InkWell(
           onTap: () => m == null ? widget.onGoTo(3) : Navigator.of(context).push(MaterialPageRoute(builder: (_) => MemoryDetailScreen(id: m.id))),
           child: m == null
               ? Container(
-                  color: C.nightSurface,
                   padding: const EdgeInsets.all(S.x4),
-                  child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Icon(Icons.photo_camera_outlined, color: C.accent, size: 26),
                     Spacer(),
                     Text('Belum ada foto', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: C.onNight)),
@@ -522,13 +593,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.symmetric(vertical: S.x1),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   Container(
-                    width: 52,
-                    height: 52,
-                    decoration: const BoxDecoration(color: C.nightSurface, shape: BoxShape.circle),
-                    child: Icon(it.$1, color: C.accent, size: 24),
+                    width: 54,
+                    height: 54,
+                    decoration: braunCap(radius: 18),
+                    child: Icon(it.$1, color: C.ink, size: 24),
                   ),
                   const SizedBox(height: 6),
-                  Text(it.$2, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: C.onNight2)),
+                  Text(it.$2, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: C.onNight2)),
                 ]),
               ),
             ),
@@ -546,7 +617,7 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (ctx, apps, _) {
         final favs = (apps ?? const <AppEntry>[]).where((a) => s.favorites.contains(a.package)).take(8).toList();
         if (favs.isEmpty) {
-          return const Padding(
+          return Padding(
             padding: EdgeInsets.only(top: S.x4, left: S.x1, right: S.x1),
             child: Text('Favorit: tahan lama aplikasi di daftar aplikasi, lalu pilih "Jadikan favorit".', style: TextStyle(fontSize: 12, color: C.onNight2, height: 1.3)),
           );
@@ -554,7 +625,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return Padding(
           padding: const EdgeInsets.only(top: S.x5),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(left: S.x1, bottom: S.x2),
               child: Text('Favorit', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: C.onNight2)),
             ),
@@ -583,10 +654,11 @@ class _HomeScreenState extends State<HomeScreen> {
         final items = [for (final p in s.dock) if (byPkg[p] != null) byPkg[p]!];
         return Padding(
           padding: EdgeInsets.fromLTRB(S.x4, S.x2, S.x4, bottom + S.x2),
-          child: Material(
-            color: C.nightSurface,
-            shape: const StadiumBorder(),
-            child: GestureDetector(
+          child: DecoratedBox(
+            decoration: braunBody(radius: 34),
+            child: Material(
+              type: MaterialType.transparency, // riak sentuh ikon dock digambar di atas badan, bukan di baliknya
+              child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               // Geser ke atas pada dock membuka App Drawer (tidak bentrok dengan gesture sistem di tepi layar).
               onVerticalDragEnd: (d) { if ((d.primaryVelocity ?? 0) < -250) widget.onOpenDrawer(); },
@@ -594,7 +666,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.all(S.x2),
                 child: Row(children: [
                   if (items.isEmpty)
-                    const Expanded(
+                    Expanded(
                       child: Padding(
                         padding: EdgeInsets.symmetric(horizontal: S.x4),
                         child: Text('Tahan lama aplikasi di daftar aplikasi untuk menambah ke dock', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: C.onNight2, height: 1.25)),
@@ -621,18 +693,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     button: true,
                     label: 'Buka semua aplikasi',
                     excludeSemantics: true,
-                    child: Material(
-                      color: C.accent,
-                      shape: const CircleBorder(),
-                      child: InkWell(
-                        customBorder: const CircleBorder(),
-                        onTap: widget.onOpenDrawer,
-                        child: const SizedBox(width: 56, height: 56, child: Icon(Icons.apps_rounded, color: C.ink, size: 26)),
-                      ),
-                    ),
+                    child: BraunKnob(icon: Icons.apps_rounded, size: 52, onTap: widget.onOpenDrawer),
                   ),
                 ]),
               ),
+            ),
             ),
           ),
         );
@@ -690,24 +755,27 @@ class _Pill extends StatelessWidget {
         button: onTap != null,
         label: semantics,
         excludeSemantics: true,
-        child: Material(
-          color: C.nightSurface,
-          shape: const StadiumBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
+        child: DecoratedBox(
+          decoration: braunCap(radius: 24),
+          child: Material(
+            type: MaterialType.transparency,
+            borderRadius: BorderRadius.circular(24),
+            child: InkWell(
+            borderRadius: BorderRadius.circular(24),
             onTap: onTap,
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: compact ? 48 : 52),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: S.x4, vertical: S.x2),
                 child: Row(children: [
-                  Icon(icon, size: 20, color: C.accent),
+                  Icon(icon, size: 20, color: B.orangeLo),
                   const SizedBox(width: S.x3),
                   Expanded(child: Text(text, maxLines: compact ? 1 : 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 13 : 13.5, fontWeight: FontWeight.w600, color: C.onNight))),
-                  if (onTap != null) const Icon(Icons.chevron_right_rounded, size: 20, color: C.onNight),
+                  if (onTap != null) Icon(Icons.chevron_right_rounded, size: 20, color: C.onNight),
                 ]),
               ),
             ),
+          ),
           ),
         ),
       );
@@ -753,9 +821,9 @@ class _WeekRow extends StatelessWidget {
           child: icon == null ? null : Icon(icon, size: 17, color: iconColor),
         );
     return switch (m) {
-      _DayMark.present => circle(fill: C.accent, icon: Icons.check_rounded, iconColor: C.ink),
+      _DayMark.present => circle(fill: C.accent, icon: Icons.check_rounded, iconColor: Colors.white),
       _DayMark.late => circle(fill: C.warningSoft, icon: Icons.watch_later_rounded, iconColor: C.warning),
-      _DayMark.pending => circle(border: C.accent, bw: 2, icon: Icons.hourglass_top_rounded, iconColor: C.accent),
+      _DayMark.pending => circle(border: C.accent, bw: 2, icon: Icons.hourglass_top_rounded, iconColor: B.orangeLo),
       _DayMark.missed => circle(border: C.onNight2.withValues(alpha: .5), icon: Icons.remove_rounded, iconColor: C.onNight2),
       _DayMark.today => circle(border: C.onNight, bw: 2),
       _DayMark.future => circle(border: C.onNight2.withValues(alpha: .25)),
@@ -779,13 +847,13 @@ class _AlertCard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(S.x4, S.x3, S.x2, S.x2),
           decoration: BoxDecoration(color: C.warningSoft, borderRadius: BorderRadius.circular(R.small)),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Padding(padding: EdgeInsets.only(top: 2), child: Icon(Icons.cloud_off_outlined, size: 20, color: C.warning)),
+            Padding(padding: EdgeInsets.only(top: 2), child: Icon(Icons.cloud_off_outlined, size: 20, color: C.warning)),
             const SizedBox(width: S.x3),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: C.ink)),
+                Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: C.ink)),
                 const SizedBox(height: 2),
-                Text(body, style: const TextStyle(fontSize: 12.5, color: C.text, height: 1.3)),
+                Text(body, style: TextStyle(fontSize: 12.5, color: C.text, height: 1.3)),
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
@@ -799,4 +867,52 @@ class _AlertCard extends StatelessWidget {
           ]),
         ),
       );
+}
+
+/// Badan perangkat dengan area ketuk: dipakai kartu Jadwal & Memories di Beranda.
+class _Device extends StatelessWidget {
+  final Widget child;
+  const _Device({required this.child});
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+        decoration: braunBody(radius: R.widget),
+        child: Material(
+          type: MaterialType.transparency,
+          borderRadius: BorderRadius.circular(R.widget),
+          clipBehavior: Clip.antiAlias,
+          child: child,
+        ),
+      );
+}
+
+
+/// Badan perangkat berbentuk panel organik (sama dengan bentuk lama): gradien plastik, tepi halus, bayangan jatuh.
+class _OrganicDevice extends StatelessWidget {
+  final double cut;
+  final Widget child;
+  const _OrganicDevice({required this.cut, required this.child});
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+        painter: _OrganicDevicePainter(cut),
+        child: ClipPath(clipper: OrganicPanelClipper(cut: cut), child: child),
+      );
+}
+
+class _OrganicDevicePainter extends CustomPainter {
+  final double cut;
+  const _OrganicDevicePainter(this.cut);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = OrganicPanelClipper(cut: cut).getClip(size);
+    canvas.drawShadow(path, const Color(0xFF1E1C18), 8, false);
+    final rect = Offset.zero & size;
+    canvas.drawPath(
+      path,
+      Paint()..shader = LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [B.bodyHi, B.body, B.bodyLo], stops: [0, .45, 1]).createShader(rect),
+    );
+    canvas.drawPath(path, Paint()..style = PaintingStyle.stroke..strokeWidth = 1..color = B.hair);
+  }
+
+  @override
+  bool shouldRepaint(covariant _OrganicDevicePainter old) => old.cut != cut;
 }

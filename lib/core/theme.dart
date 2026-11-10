@@ -1,57 +1,67 @@
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
+import 'braun.dart';
 
-/// Design tokens SNOOP. Semua warna, radius, dan spacing didefinisikan di sini
-/// agar widget tidak menulis nilai berulang. Nama lama (pink/mint/blue) dipertahankan
-/// supaya layar yang belum dimigrasi tetap ter-compile, tetapi nilainya mengikuti
-/// palet Update 1.0.0: kuning hangat + charcoal + ivory.
+/// Design tokens SNOOP: bahasa desain keluarga produk Braun.
+/// Halaman = permukaan meja abu hangat; kartu/perangkat = badan plastik `B.body`; tombol = tutup timbul;
+/// layar = jendela LCD hijau-abu atau layar gelap kecil; oranye hanya untuk aksi (ditekan/diputar/dilihat aktif).
+/// Nama token lama dipertahankan agar seluruh layar otomatis ikut palet baru. Nama `night*` kini berarti
+/// "permukaan perangkat di Beranda/App Drawer" (terang), bukan lagi mode gelap.
 class C {
-  // Permukaan terang (halaman pendukung)
-  static const bg = Color(0xFFF5F3ED);        // ivory
-  static const surface = Color(0xFFFFFFFF);
-  static const soft = Color(0xFFEAE6DC);      // permukaan sekunder hangat
-  static const border = Color(0xFFD9D4C8);
-  // Teks pada permukaan terang
-  static const text = Color(0xFF252422);      // charcoal
-  static const text2 = Color(0xFF5E5A52);     // kontras >= 4.5:1 di atas ivory & soft
-  // Aksen
-  static const accent = Color(0xFFF4BD22);    // kuning hangat (panel utama, aksi utama)
-  static const accentSoft = Color(0xFFFBEFC4);
-  static const ink = Color(0xFF252422);       // teks/tombol gelap di atas permukaan terang atau kuning
-  // Permukaan gelap (Home, dock, App Drawer)
-  static const night = Color(0xFF252422);
-  static const nightSurface = Color(0xFF383735);
-  static const onNight = Color(0xFFFFFFFF);
-  static const onNight2 = Color(0xFFD0CCC3);  // teks sekunder di atas night / nightSurface
-  // Status. Kuning aksen tidak dipakai sebagai penanda status; setiap status juga punya ikon + teks.
-  static const success = Color(0xFF2F7D55);
-  static const successSoft = Color(0xFFD9EFE2);
-  static const warning = Color(0xFF9A4A00);
-  static const warningSoft = Color(0xFFFDE3CC);
-  static const error = Color(0xFFC8434A);
-  static const errorSoft = Color(0xFFF8D9DB);
+  /// Update 1.2.8: mengikuti [B.dark] (diatur `snoopTheme`). Permukaan, teks, `ink`, dan warna status berganti
+  /// antara palet Braun terang dan gelap; oranye aksen dan teks putih di atas oranye (`onAccent`) tetap.
+  static bool get dark => B.dark;
+
+  // Permukaan
+  static Color get bg => dark ? const Color(0xFF1A1917) : const Color(0xFFEFEEEA);        // meja / latar halaman
+  static Color get surface => dark ? const Color(0xFF2B2A27) : const Color(0xFFF6F5F1);   // tutup tombol / kartu
+  static Color get soft => dark ? const Color(0xFF242321) : const Color(0xFFE3E2DC);      // permukaan sekunder (sumur)
+  static Color get border => dark ? const Color(0xFF45433F) : const Color(0xFFCFCDC5);
+  // Teks pada permukaan (kontras >= 4.5:1 di kedua tema)
+  static Color get text => dark ? const Color(0xFFEFEEEA) : const Color(0xFF2A2926);
+  static Color get text2 => dark ? const Color(0xFFBDBAB2) : const Color(0xFF5F5D56);
+  // Aksen oranye Braun
+  static const accent = Color(0xFFF15A22);
+  static Color get accentSoft => dark ? const Color(0xFF4A3024) : const Color(0xFFF9DFD2);
+  /// Teks/ikon/tombol "tinta": charcoal di tema terang, terang di tema gelap.
+  static Color get ink => dark ? const Color(0xFFEFEEEA) : const Color(0xFF2A2926);
+  /// Sama dengan [ink]; nama dipertahankan untuk kode yang sudah memakainya.
+  static Color get fg => ink;
+  static const onAccent = Color(0xFFFFFFFF);  // teks/ikon di atas oranye
+  // Permukaan perangkat di Beranda & App Drawer
+  static Color get night => dark ? const Color(0xFF1A1917) : const Color(0xFFEFEEEA);
+  static Color get nightSurface => dark ? const Color(0xFF2B2A27) : const Color(0xFFE6E5E0); // badan perangkat
+  static Color get onNight => dark ? const Color(0xFFEFEEEA) : const Color(0xFF2A2926);
+  static Color get onNight2 => dark ? const Color(0xFFBDBAB2) : const Color(0xFF5F5D56);
+  // Status. Oranye aksen tidak dipakai sebagai penanda status; setiap status juga punya ikon + teks.
+  static Color get success => dark ? const Color(0xFF6FCF97) : const Color(0xFF2E7D4F);
+  static Color get successSoft => dark ? const Color(0xFF223A2C) : const Color(0xFFD9EBDF);
+  static Color get warning => dark ? const Color(0xFFF0A35E) : const Color(0xFF9A4A00);
+  static Color get warningSoft => dark ? const Color(0xFF42301C) : const Color(0xFFF7E2CC);
+  static Color get error => dark ? const Color(0xFFFF8A80) : const Color(0xFFC03A32);
+  static Color get errorSoft => dark ? const Color(0xFF40231F) : const Color(0xFFF5D8D4);
   // Alias lama (layar yang belum dimigrasi)
-  static const blue = accentSoft;
-  static const mint = successSoft;
-  static const pink = Color(0xFFF6D5C6);
-  static const orange = warning;
-  static const orangeSoft = warningSoft;
-  static const red = error;
+  static Color get blue => accentSoft;
+  static Color get mint => successSoft;
+  static Color get pink => accentSoft;
+  static Color get orange => warning;
+  static Color get orangeSoft => warningSoft;
+  static Color get red => error;
 }
 
-/// Palet "Mindate" untuk fitur bagikan bukti absensi: gradien biru langit -> mint, teks slate gelap.
+/// Palet kertas untuk fitur bagikan bukti absensi: gradien abu hangat, teks charcoal.
 /// Dipakai gambar bukti (EvidenceService) dan layar Absensi Tercatat agar tampilannya sama.
 class M {
-  static const skyTop = Color(0xFFA8D8FA);
-  static const skyMid = Color(0xFFC9E8FB);
-  static const mint = Color(0xFFD3F6E6);
-  static const ink = Color(0xFF1E3A4C);     // kontras tinggi di atas gradien
-  static const muted = Color(0xFF46606F);   // teks sekunder, >= 4.5:1 di atas panel putih & gradien
-  static const panel = Color(0xF5FFFFFF);
-  static const line = Color(0xFFE1ECF2);
-  static const ok = Color(0xFF2F9E6B);
-  static const warn = Color(0xFFE08A1E);
-  static const bad = Color(0xFFD9534F);
+  static const skyTop = Color(0xFFEDECE7);
+  static const skyMid = Color(0xFFE3E2DC);
+  static const mint = Color(0xFFD9D8D2);
+  static const ink = Color(0xFF2A2926);     // kontras tinggi di atas gradien
+  static const muted = Color(0xFF55534D);   // teks sekunder, >= 4.5:1 di atas panel & gradien
+  static const panel = Color(0xF5F6F5F1);
+  static const line = Color(0xFFD3D1C9);
+  static const ok = Color(0xFF2E7D4F);
+  static const warn = Color(0xFFD44813);
+  static const bad = Color(0xFFC03A32);
   static const gradient = LinearGradient(
     begin: Alignment.topCenter, end: Alignment.bottomCenter,
     colors: [skyTop, skyMid, mint], stops: [0, .5, 1],
@@ -70,11 +80,18 @@ class S {
   static const x1 = 4.0, x2 = 8.0, x3 = 12.0, x4 = 16.0, x5 = 20.0, x6 = 24.0, x8 = 32.0;
 }
 
+/// Mode tema yang bisa dipilih pengguna (Pengaturan > Tema). Disimpan sebagai teks di AppState.theme.
+const kThemeModes = ['Terang', 'Gelap', 'Ikuti sistem'];
+
+/// True bila tema yang dipilih berarti gelap. [platformDark] = pengaturan gelap sistem (untuk "Ikuti sistem").
+bool resolveDark(String mode, bool platformDark) => mode == 'Gelap' || (mode == 'Ikuti sistem' && platformDark);
+
 ThemeData snoopTheme({bool dark = false}) {
-  // Catatan: seluruh widget memakai token statis `C` (terang). Tema gelap penuh membutuhkan
-  // token yang sadar-tema, jadi untuk sementara aplikasi selalu memakai tema terang.
-  const brightness = Brightness.light;
-  final scheme = ColorScheme.fromSeed(seedColor: C.accent, brightness: brightness, surface: C.bg, primary: C.ink, secondary: C.accent);
+  // Token `C` dan `B` sadar-tema membaca B.dark; diatur di sini sebelum pohon widget dibangun.
+  B.dark = dark;
+  final brightness = dark ? Brightness.dark : Brightness.light;
+  final scheme = ColorScheme.fromSeed(seedColor: C.accent, brightness: brightness, surface: C.bg, primary: C.accent, secondary: C.accent, onPrimary: C.onAccent, onSurface: C.text, outline: C.border);
+  final capShape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(R.small));
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
@@ -85,35 +102,77 @@ ThemeData snoopTheme({bool dark = false}) {
       TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
     }),
     colorScheme: scheme,
-    textTheme: const TextTheme(
+    splashFactory: InkRipple.splashFactory,
+    textTheme: TextTheme(
       headlineMedium: TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: C.text, letterSpacing: -0.5),
-      headlineSmall: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: C.text, letterSpacing: -0.3),
-      titleMedium: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: C.text, letterSpacing: -0.1),
+      headlineSmall: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: C.text, letterSpacing: -0.2),
+      titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: C.text, letterSpacing: 0),
       bodyMedium: TextStyle(fontSize: 14, color: C.text),
       bodySmall: TextStyle(fontSize: 12.5, color: C.text2),
     ),
-    appBarTheme: const AppBarTheme(
+    appBarTheme: AppBarTheme(
       backgroundColor: Colors.transparent, elevation: 0, scrolledUnderElevation: 0, centerTitle: false,
-      titleTextStyle: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: C.text),
+      titleTextStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.text),
       iconTheme: IconThemeData(color: C.text),
     ),
+    // Kolom isian = jendela LCD cekung.
     inputDecorationTheme: InputDecorationTheme(
-      filled: true, fillColor: C.soft,
+      filled: true, fillColor: B.lcd,
+      labelStyle: TextStyle(color: C.text2),
+      hintStyle: TextStyle(color: C.text2),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(R.small), borderSide: BorderSide.none),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(R.small), borderSide: const BorderSide(color: C.ink, width: 1.5)),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(R.small), borderSide: BorderSide(color: B.hair)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(R.small), borderSide: BorderSide(color: B.hair)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(R.small), borderSide: const BorderSide(color: C.accent, width: 2)),
     ),
-    dialogTheme: DialogThemeData(backgroundColor: C.surface, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(R.card))),
-    bottomSheetTheme: const BottomSheetThemeData(backgroundColor: C.bg, shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(R.card)))),
+    // Tombol utama = tombol oranye; tombol sekunder = tutup timbul.
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: C.accent, foregroundColor: C.onAccent,
+        disabledBackgroundColor: C.soft, disabledForegroundColor: C.text2,
+        textStyle: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: .2),
+        shape: capShape, minimumSize: const Size(48, 48),
+      ),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(backgroundColor: C.surface, foregroundColor: C.ink, elevation: 1, shadowColor: Colors.black45, shape: capShape, minimumSize: const Size(48, 48)),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(foregroundColor: C.ink, side: BorderSide(color: B.hairStrong), shape: capShape, minimumSize: const Size(48, 48)),
+    ),
+    textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: C.ink, textStyle: const TextStyle(fontWeight: FontWeight.w800))),
+    floatingActionButtonTheme: const FloatingActionButtonThemeData(backgroundColor: C.accent, foregroundColor: C.onAccent, elevation: 3, shape: CircleBorder()),
+    dividerTheme: DividerThemeData(color: B.hair, thickness: 1, space: 1),
+    listTileTheme: ListTileThemeData(iconColor: C.ink, textColor: C.text),
+    progressIndicatorTheme: const ProgressIndicatorThemeData(color: C.accent),
+    dialogTheme: DialogThemeData(
+      backgroundColor: B.body, surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(R.card), side: BorderSide(color: B.hair)),
+    ),
+    timePickerTheme: TimePickerThemeData(backgroundColor: B.body, dialBackgroundColor: B.lcd, hourMinuteColor: B.lcd, hourMinuteTextColor: B.lcdInk, dialHandColor: C.accent, entryModeIconColor: C.ink),
+    datePickerTheme: DatePickerThemeData(backgroundColor: B.body, headerBackgroundColor: B.body, todayBorder: const BorderSide(color: C.accent), surfaceTintColor: Colors.transparent),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: B.body, surfaceTintColor: Colors.transparent, showDragHandle: true, dragHandleColor: B.hairStrong,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(R.card))),
+    ),
     snackBarTheme: SnackBarThemeData(
-      behavior: SnackBarBehavior.floating, backgroundColor: C.ink, contentTextStyle: const TextStyle(color: Colors.white, fontSize: 13),
+      behavior: SnackBarBehavior.floating, backgroundColor: B.screen, contentTextStyle: const TextStyle(color: Colors.white, fontSize: 13),
+      actionTextColor: B.orangeHi,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     ),
+    // Saklar: lintasan oranye saat aktif, ibu jari tutup timbul.
     switchTheme: SwitchThemeData(
-      thumbColor: WidgetStateProperty.all(Colors.white),
-      trackColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? C.ink : C.border),
-      trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+      thumbColor: WidgetStateProperty.all(B.cap),
+      trackColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? C.accent : B.well),
+      trackOutlineColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? B.orangeLo : B.hairStrong),
     ),
+    checkboxTheme: CheckboxThemeData(
+      fillColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? C.accent : Colors.transparent),
+      checkColor: WidgetStateProperty.all(Colors.white),
+      side: BorderSide(color: B.hairStrong, width: 1.5),
+    ),
+    radioTheme: RadioThemeData(fillColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? C.accent : C.text2)),
+    sliderTheme: SliderThemeData(activeTrackColor: C.accent, thumbColor: C.accent, inactiveTrackColor: B.well, overlayColor: Color(0x29F15A22)),
   );
 }
 

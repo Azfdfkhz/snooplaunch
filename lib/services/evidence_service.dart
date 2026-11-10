@@ -236,8 +236,8 @@ class EvidenceService {
     final cardRect = Rect.fromLTWH(_pad, h - _pad - cardH, cw, cardH);
 
     final chipDot = switch (d.presenceLabel) {
-      'Terlambat' => C.warning,
-      'Perlu perhatian' => C.error,
+      'Terlambat' => M.warn,
+      'Perlu perhatian' => M.bad,
       'Hadir' => C.accent,
       _ => white,
     };

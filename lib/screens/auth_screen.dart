@@ -88,7 +88,7 @@ class _AuthScreenState extends State<AuthScreen> {
         if (!s.backendConfigured)
           SnoopCard(
             color: C.warningSoft,
-            child: Text(s.backendError ?? 'Supabase belum dikonfigurasi. Isi lib/core/env.dart atau gunakan --dart-define.', style: const TextStyle(fontSize: 13, color: C.ink)),
+            child: Text(s.backendError ?? 'Supabase belum dikonfigurasi. Isi lib/core/env.dart atau gunakan --dart-define.', style: TextStyle(fontSize: 13, color: C.ink)),
           ),
         Form(
           key: _form,

@@ -23,6 +23,9 @@ class AttendancePreviewScreen extends StatefulWidget {
 class _AttendancePreviewScreenState extends State<AttendancePreviewScreen> {
   DateTime _now = DateTime.now();
   Timer? _tick;
+  // Update 1.2.8: tombol Balik. Jumlah pembalikan dipakai sebagai kunci gambar supaya Image.file memuat ulang berkas.
+  int _flips = 0;
+  bool _flipping = false;
 
   @override
   void initState() {
@@ -36,6 +39,18 @@ class _AttendancePreviewScreenState extends State<AttendancePreviewScreen> {
   void dispose() {
     _tick?.cancel();
     super.dispose();
+  }
+
+  /// Membalik foto kiri-kanan (mis. kamera sistem dialihkan pengguna ke kamera lain sehingga hasilnya terbalik).
+  Future<void> _flip() async {
+    if (_flipping) return;
+    setState(() => _flipping = true);
+    final provider = FileImage(File(widget.res.photoPath));
+    try {
+      await CaptureService.flipPhotoHorizontal(widget.res.photoPath);
+      await provider.evict();
+    } catch (_) {}
+    if (mounted) setState(() { _flipping = false; _flips++; });
   }
 
   String get _locationText {
@@ -81,6 +96,7 @@ class _AttendancePreviewScreenState extends State<AttendancePreviewScreen> {
                   clipBehavior: Clip.antiAlias,
                   child: Image.file(
                     File(widget.res.photoPath),
+                    key: ValueKey(_flips),
                     fit: BoxFit.contain,
                     cacheWidth: 1400,
                     errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image_outlined, size: 40, color: G.text2)),
@@ -108,13 +124,13 @@ class _AttendancePreviewScreenState extends State<AttendancePreviewScreen> {
                   padding: const EdgeInsets.all(S.x3),
                   decoration: BoxDecoration(color: C.warningSoft, borderRadius: BorderRadius.circular(R.small)),
                   child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Icon(Icons.cloud_off_outlined, size: 18, color: C.warning),
+                    Icon(Icons.cloud_off_outlined, size: 18, color: C.warning),
                     const SizedBox(width: S.x2),
                     Expanded(child: Text(
                       AppScope.of(context).backendConfigured
                           ? 'Kamu belum masuk, jadi foto belum bisa diunggah ke Google Drive. Absensi tetap dicatat, tetapi foto tidak disimpan di perangkat.'
                           : 'Server belum dikonfigurasi, jadi foto tidak bisa diunggah. Absensi tetap dicatat, tetapi foto tidak disimpan di perangkat.',
-                      style: const TextStyle(fontSize: 12.5, color: C.text),
+                      style: TextStyle(fontSize: 12.5, color: C.text),
                     )),
                   ]),
                 ),
@@ -125,6 +141,7 @@ class _AttendancePreviewScreenState extends State<AttendancePreviewScreen> {
         GlassBottomBar(
           actions: [
             GlassAction(icon: Icons.refresh_rounded, label: 'Ambil Ulang', onTap: () => Navigator.of(context).pop(PreviewAction.retake)),
+            GlassAction(icon: Icons.flip_rounded, label: 'Balik', onTap: _flip),
             GlassAction(icon: Icons.close_rounded, label: 'Batalkan', onTap: () => Navigator.of(context).pop(PreviewAction.cancel)),
           ],
           primary: GlassCircleButton(icon: Icons.check_rounded, tooltip: 'Gunakan Foto', filled: true, size: 68, onTap: () => Navigator.of(context).pop(PreviewAction.use)),

@@ -1,14 +1,16 @@
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'braun.dart';
 import 'theme.dart';
 
-/// Token dan widget gaya "kaca gelap" untuk alur absensi: latar gradasi plum, kartu transparan
-/// dengan blur, tombol bulat mengambang, dan kapsul aksi di bawah.
+/// Token dan widget gaya "layar gelap kecil" (seperti layar CRT pada produk Braun) untuk alur absensi:
+/// latar hijau-arang, kartu transparan dengan blur, tombol bulat mengambang, dan kapsul aksi di bawah.
+/// Aksen oranye dipakai untuk aksi utama.
 class G {
-  static const top = Color(0xFF3B2A40);
-  static const mid = Color(0xFF241B2B);
-  static const bottom = Color(0xFF14101A);
+  static const top = Color(0xFF2E3228);
+  static const mid = Color(0xFF1D201A);
+  static const bottom = Color(0xFF12140F);
   static const glass = Color(0x1FFFFFFF);
   static const glassBorder = Color(0x2EFFFFFF);
   static const text = Color(0xFFFFFFFF);
@@ -44,7 +46,7 @@ class GlassScaffold extends StatelessWidget {
               ),
             ),
             Positioned(top: -90, right: -70, child: _Glow(C.accent.withAlpha(46), 280)),
-            Positioned(bottom: -110, left: -90, child: _Glow(const Color(0xFFE0709A).withAlpha(40), 320)),
+            Positioned(bottom: -110, left: -90, child: _Glow(const Color(0xFFD3D6CA).withAlpha(26), 320)),
             SafeArea(child: child),
           ]),
         ),
@@ -75,7 +77,7 @@ class GlassBox extends StatelessWidget {
   }
 }
 
-/// Tombol bulat mengambang. [filled] = kuning aksen (aksi utama).
+/// Tombol bulat mengambang. [filled] = knob oranye (aksi utama).
 class GlassCircleButton extends StatelessWidget {
   final IconData icon;
   final String tooltip;
@@ -88,8 +90,13 @@ class GlassCircleButton extends StatelessWidget {
     final inner = filled
         ? Container(
             width: size, height: size,
-            decoration: const BoxDecoration(shape: BoxShape.circle, color: C.accent),
-            child: Icon(icon, size: size * .46, color: C.ink),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const RadialGradient(center: Alignment(-.35, -.45), radius: 1.0, colors: [B.orangeHi, B.orange, B.orangeLo], stops: [0, .6, 1]),
+              border: Border.all(color: B.orangeLo),
+              boxShadow: const [BoxShadow(color: Color(0x99D44813), blurRadius: 10, spreadRadius: -2, offset: Offset(0, 4))],
+            ),
+            child: Icon(icon, size: size * .46, color: Colors.white),
           )
         : GlassBox(
             radius: size / 2, padding: EdgeInsets.zero,

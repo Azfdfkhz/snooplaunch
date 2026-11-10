@@ -88,14 +88,13 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
   }
 
   SystemUiOverlayStyle get _overlay {
-    final drawer = _page == _drawerPage;
     final night = _page <= _homePage; // Drawer & Beranda memakai latar gelap
     return SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
-      statusBarIconBrightness: drawer ? Brightness.light : Brightness.dark,
-      statusBarBrightness: drawer ? Brightness.dark : Brightness.light,
+      statusBarIconBrightness: C.dark ? Brightness.light : Brightness.dark, // latar Braun terang/gelap di semua halaman
+      statusBarBrightness: C.dark ? Brightness.dark : Brightness.light,
       systemNavigationBarColor: night ? C.night : C.bg,
-      systemNavigationBarIconBrightness: night ? Brightness.light : Brightness.dark,
+      systemNavigationBarIconBrightness: C.dark ? Brightness.light : Brightness.dark,
       systemNavigationBarDividerColor: Colors.transparent,
     );
   }

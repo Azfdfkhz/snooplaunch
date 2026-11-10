@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart' show CameraDevice;
 import 'package:uuid/uuid.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
+import '../core/braun.dart';
 import '../core/glass.dart';
 import '../main.dart';
 import '../services/capture_service.dart';
@@ -26,6 +28,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
   bool _working = false;
   String _stage = '';
   CaptureFailure? _failure;
+  /// Update 1.2.8: pilihan kamera. Depan di-un-mirror, belakang tidak dibalik.
+  CameraDevice _camera = CameraDevice.front;
 
   Future<void> _run() async {
     final s = AppScope.of(context);
@@ -35,7 +39,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
     try {
       late CaptureResult photo;
       while (true) {
-        final r = await CaptureService.capture(onStage: (t) { if (mounted) setState(() => _stage = t); });
+        final r = await CaptureService.capture(camera: _camera, onStage: (t) { if (mounted) setState(() => _stage = t); });
         if (r == null || !mounted) {
           if (r != null) CaptureService.discard(r.photoPath);
           return; // kamera ditutup tanpa foto
@@ -137,6 +141,12 @@ class _CheckInScreenState extends State<CheckInScreen> {
             padding: const EdgeInsets.fromLTRB(S.x6, S.x3, S.x6, 0),
             child: Column(children: [
               Expanded(child: _Viewfinder(working: _working, stage: _stage, onTap: _run)),
+              const SizedBox(height: S.x3),
+              _CameraPicker(
+                value: _camera,
+                enabled: !_working,
+                onChanged: (c) => setState(() => _camera = c),
+              ),
               if (f != null) ...[
                 const SizedBox(height: S.x3),
                 Container(
@@ -144,9 +154,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   decoration: BoxDecoration(color: C.errorSoft, borderRadius: BorderRadius.circular(R.small)),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Icon(Icons.error_outline_rounded, size: 20, color: C.error),
+                      Icon(Icons.error_outline_rounded, size: 20, color: C.error),
                       const SizedBox(width: S.x2),
-                      Expanded(child: Text(f.message, style: const TextStyle(fontSize: 13.5, color: C.text))),
+                      Expanded(child: Text(f.message, style: TextStyle(fontSize: 13.5, color: C.text))),
                     ]),
                     if (f.kind == CaptureFailureKind.cameraDenied)
                       Align(
@@ -176,6 +186,52 @@ class _CheckInScreenState extends State<CheckInScreen> {
           ],
           primary: _Shutter(working: _working, onTap: _run),
         ),
+      ]),
+    );
+  }
+}
+
+/// Update 1.2.8: pilih kamera depan atau belakang. Foto kamera belakang tidak di-mirror.
+class _CameraPicker extends StatelessWidget {
+  final CameraDevice value;
+  final bool enabled;
+  final ValueChanged<CameraDevice> onChanged;
+  const _CameraPicker({required this.value, required this.enabled, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget seg(CameraDevice d, IconData icon, String label) {
+      final on = value == d;
+      return Expanded(
+        child: Semantics(
+          button: true,
+          selected: on,
+          label: 'Kamera $label',
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: enabled ? () => onChanged(d) : null,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              constraints: const BoxConstraints(minHeight: 44),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: on ? B.orange : Colors.transparent, borderRadius: BorderRadius.circular(R.pill)),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(icon, size: 18, color: on ? Colors.white : G.text2),
+                const SizedBox(width: 6),
+                Text(label, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: on ? Colors.white : G.text2)),
+              ]),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: G.glass, borderRadius: BorderRadius.circular(R.pill), border: Border.all(color: G.glassBorder)),
+      child: Row(children: [
+        seg(CameraDevice.front, Icons.face_retouching_natural_rounded, 'Depan'),
+        seg(CameraDevice.rear, Icons.photo_camera_back_outlined, 'Belakang'),
       ]),
     );
   }
@@ -270,7 +326,7 @@ class _Shutter extends StatelessWidget {
             decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: working ? G.glassBorder : G.text2, width: 3)),
             child: Container(
               decoration: BoxDecoration(shape: BoxShape.circle, color: working ? G.glass : C.accent),
-              child: Icon(Icons.photo_camera_rounded, size: 28, color: working ? G.text2 : C.ink),
+              child: Icon(Icons.photo_camera_rounded, size: 28, color: working ? G.text2 : Colors.white),
             ),
           ),
         ),

@@ -191,7 +191,7 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
             const SizedBox(height: S.x3),
             Wrap(spacing: 8, runSpacing: 8, children: [
               StatusChip(st.text, bg: st.bg, fg: st.fg, icon: st.icon),
-              if (sched != null) const StatusChip('Tertaut ke jadwal', bg: C.soft, fg: C.text, icon: Icons.event_outlined),
+              if (sched != null) StatusChip('Tertaut ke jadwal', bg: C.soft, fg: C.text, icon: Icons.event_outlined),
             ]),
             const SizedBox(height: S.x3),
             GlassBox(

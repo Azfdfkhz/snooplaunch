@@ -16,7 +16,9 @@ class MemoryPhoto extends StatelessWidget {
   final int cacheWidth;
   /// Tanpa teks (untuk thumbnail kecil); hanya ikon.
   final bool compact;
-  final Color placeholderColor;
+  /// null = mengikuti tema (C.soft).
+  final Color? _placeholder;
+  Color get placeholderColor => _placeholder ?? C.soft;
   const MemoryPhoto({
     super.key,
     required this.memory,
@@ -24,8 +26,8 @@ class MemoryPhoto extends StatelessWidget {
     this.thumb = false,
     this.cacheWidth = 800,
     this.compact = false,
-    this.placeholderColor = C.soft,
-  });
+    Color? placeholderColor,
+  }) : _placeholder = placeholderColor;
 
   @override
   Widget build(BuildContext context) {

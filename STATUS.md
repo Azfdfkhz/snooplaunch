@@ -1,3 +1,5 @@
+> Update 1.2.8 (di atas Braun v2): kamera belakang tanpa mirror, tema gelap Braun, status bar kustom, logo dari SVG, mode Sekolah + QR absen. Lihat UPDATE_1_2_8_REPORT.md.
+
 # Status pengerjaan SNOOP
 
 ## Sudah dibuat

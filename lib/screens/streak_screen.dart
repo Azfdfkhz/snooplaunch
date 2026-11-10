@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import '../core/flame.dart';
 import '../core/state.dart';
+import '../core/braun.dart';
 import '../core/theme.dart';
 
 /// Buka layar api streak: layar penuh gelap dengan api yang berdenyut, gaya streak TikTok.
@@ -51,13 +52,13 @@ class _StreakScreenState extends State<StreakScreen> {
       _ => C.onNight.withValues(alpha: 0.08),
     };
     final icon = switch (k) {
-      'hadir' => const FlameIcon(size: 22, color: C.ink, core: C.accent),
-      'izin' => const Icon(Icons.event_busy_rounded, size: 18, color: C.ink),
-      'absen' => const Icon(Icons.close_rounded, size: 18, color: C.error),
+      'hadir' => FlameIcon(size: 22, color: C.ink, core: C.accent),
+      'izin' => Icon(Icons.event_busy_rounded, size: 18, color: C.ink),
+      'absen' => Icon(Icons.close_rounded, size: 18, color: C.error),
       _ => const SizedBox.shrink(),
     };
     return Column(children: [
-      Text(kDaysShort[d.weekday - 1], style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: C.onNight2)),
+      Text(kDaysShort[d.weekday - 1], style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: C.onNight2)),
       const SizedBox(height: S.x2),
       Container(
         width: 40,
@@ -76,11 +77,11 @@ class _StreakScreenState extends State<StreakScreen> {
   Widget _stat(String label, String value) => Expanded(
         child: Container(
           padding: const EdgeInsets.all(S.x3),
-          decoration: BoxDecoration(color: C.nightSurface, borderRadius: BorderRadius.circular(R.widget)),
+          decoration: braunBody(radius: R.widget),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: const TextStyle(fontSize: 12, color: C.onNight2)),
+            Text(label, style: TextStyle(fontSize: 12, color: C.onNight2)),
             const SizedBox(height: 2),
-            Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.onNight)),
+            Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.onNight)),
           ]),
         ),
       );
@@ -149,13 +150,13 @@ class _StreakScreenState extends State<StreakScreen> {
                 Text(
                   'hari berturut-turut',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: C.onNight),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: C.onNight),
                 ),
                 const SizedBox(height: S.x2),
                 Text(
                   _message(streak, todayKind),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 14, color: C.onNight2),
+                  style: TextStyle(fontSize: 14, color: C.onNight2),
                 ),
                 const SizedBox(height: S.x5),
                 Row(children: [for (var i = 0; i < 7; i++) Expanded(child: _dayDot(s, monday.add(Duration(days: i)), today))]),
@@ -166,22 +167,22 @@ class _StreakScreenState extends State<StreakScreen> {
                   _stat('Total hadir', '${s.presentDayCount} hari'),
                 ]),
                 const SizedBox(height: S.x5),
-                const Text('5 minggu terakhir', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: C.onNight)),
+                Text('5 minggu terakhir', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: C.onNight)),
                 const SizedBox(height: S.x2),
                 Row(children: [
                   for (final w in const ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'])
-                    Expanded(child: Center(child: Text(w, style: const TextStyle(fontSize: 11, color: C.onNight2, fontWeight: FontWeight.w600)))),
+                    Expanded(child: Center(child: Text(w, style: TextStyle(fontSize: 11, color: C.onNight2, fontWeight: FontWeight.w600)))),
                 ]),
                 for (var w = 0; w < 5; w++)
                   Row(children: [for (var i = 0; i < 7; i++) Expanded(child: _calendarCell(s, cells[w * 7 + i], today))]),
                 const SizedBox(height: S.x3),
-                const Wrap(spacing: S.x3, runSpacing: S.x2, children: [
+                Wrap(spacing: S.x3, runSpacing: S.x2, children: [
                   _Legend('Hadir', C.accent),
                   _Legend('Izin / sakit', C.accentSoft),
                   _Legend('Tidak hadir', C.errorSoft),
                 ]),
                 const SizedBox(height: S.x4),
-                const Text(
+                Text(
                   'Streak bertambah setiap hari kerja dengan absensi. Akhir pekan tanpa absensi, izin, dan sakit tidak memutus streak. '
                   'Hari libur nasional belum diperhitungkan.',
                   style: TextStyle(fontSize: 12, color: C.onNight2),
@@ -193,7 +194,7 @@ class _StreakScreenState extends State<StreakScreen> {
                   label: const Text('Bagikan streak', style: TextStyle(fontWeight: FontWeight.w800)),
                   style: FilledButton.styleFrom(
                     backgroundColor: C.accent,
-                    foregroundColor: C.ink,
+                    foregroundColor: Colors.white,
                     minimumSize: const Size.fromHeight(52),
                     shape: const StadiumBorder(),
                   ),
@@ -215,6 +216,6 @@ class _Legend extends StatelessWidget {
   Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
         Container(width: 12, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
         const SizedBox(width: 4),
-        Text(label, style: const TextStyle(fontSize: 11.5, color: C.onNight2)),
+        Text(label, style: TextStyle(fontSize: 11.5, color: C.onNight2)),
       ]);
 }

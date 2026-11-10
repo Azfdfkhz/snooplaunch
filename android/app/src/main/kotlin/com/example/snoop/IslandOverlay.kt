@@ -2,12 +2,16 @@ package com.example.snoop
 
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -20,6 +24,7 @@ import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.util.Calendar
 import kotlin.math.max
 import kotlin.math.sin
 
@@ -40,6 +45,23 @@ object IslandOverlay {
     private var ring: RingView? = null
     private var eq: EqView? = null
     private var lastTime = ""
+
+    // Update 1.2.8: status bar kustom. Jendela penuh selebar layar setinggi status bar (hitam) yang menutupi status bar
+    // sistem di aplikasi lain, berisi jam, jaringan, dan baterai di kiri/kanan kamera supaya tidak menutupi Island.
+    private var barRoot: FrameLayout? = null
+    private var barClock: TextView? = null
+    private var barNet: NetView? = null
+    private var barBatt: BatteryView? = null
+    private var barPct: TextView? = null
+    private var barManager: WindowManager? = null
+
+    private val barTick = object : Runnable {
+        override fun run() {
+            if (barRoot == null) return
+            refreshBar()
+            main.postDelayed(this, 15_000)
+        }
+    }
 
     private val tick = object : Runnable {
         override fun run() {
@@ -104,6 +126,7 @@ object IslandOverlay {
         val key = listOf(
             num("camX"), num("top"), num("idleTop"), num("h"), num("gap"), num("idle"),
             pomo, music, num("pomoColor"), if (pomo) "" else spec["musicText"],
+            bool("bar"), num("barH"), num("barCy"),
         ).joinToString("|")
         if (root != null && key == shapeKey) {
             refresh()
@@ -192,9 +215,12 @@ object IslandOverlay {
         }
 
         val manager = app.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        // Bar ditambahkan lebih dulu supaya pil Island tergambar di atasnya.
+        if (bool("bar")) showBar(app, manager)
         try {
             manager.addView(box, lp)
         } catch (e: Exception) {
+            hideBar()
             return // izin dicabut / jendela ditolak
         }
         wm = manager
@@ -217,6 +243,7 @@ object IslandOverlay {
 
     fun hide(animate: Boolean = true) {
         main.removeCallbacks(tick)
+        hideBar()
         val r = root ?: return
         val m = wm
         root = null; shapeKey = null; ring = null; eq = null; timeView = null
@@ -227,6 +254,180 @@ object IslandOverlay {
             r.animate().alpha(0f).scaleX(.6f).scaleY(.6f).setDuration(180).withEndAction { remove() }.start()
         } else {
             remove()
+        }
+    }
+
+    private fun dp(ctx: Context, v: Double): Int = (v * ctx.resources.displayMetrics.density).toInt()
+
+    private fun hideBar() {
+        main.removeCallbacks(barTick)
+        val r = barRoot ?: return
+        val m = barManager
+        barRoot = null; barClock = null; barNet = null; barBatt = null; barPct = null; barManager = null
+        try { m?.removeViewImmediate(r) } catch (e: Exception) { /* sudah dilepas */ }
+    }
+
+    /** Membuat status bar kustom: jam di satu sisi kamera, jaringan + baterai di sisi lainnya. */
+    private fun showBar(app: Context, manager: WindowManager) {
+        val density = app.resources.displayMetrics.density
+        val barHdp = (num("barH") ?: 24.0).coerceIn(16.0, 64.0)
+        val cy = num("barCy") ?: (barHdp / 2)
+        val rowH = dp(app, 20.0)
+        val topPx = (cy * density - rowH / 2.0).toInt().coerceAtLeast(0)
+        val camX = num("camX")
+        val screenW = app.resources.displayMetrics.widthPixels.toDouble()
+        // Kamera di pojok kiri: semua di kanan. Kamera di pojok kanan: semua di kiri. Selain itu jam kiri, ikon kanan.
+        val camLeft = camX != null && camX * density < screenW * 0.35
+        val camRight = camX != null && camX * density > screenW * 0.65
+
+        val clock = TextView(app).apply {
+            setTextColor(0xFFFFFFFF.toInt()); typeface = Typeface.DEFAULT_BOLD; textSize = 13f; maxLines = 1
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val net = NetView(app, density)
+        val batt = BatteryView(app, density)
+        val pct = TextView(app).apply {
+            setTextColor(0xFFFFFFFF.toInt()); typeface = Typeface.DEFAULT_BOLD; textSize = 11.5f; maxLines = 1
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        fun row(): LinearLayout = LinearLayout(app).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        fun addGap(r: LinearLayout, d: Double) = r.addView(View(app), LinearLayout.LayoutParams(dp(app, d), 1))
+        val left = row()
+        val right = row()
+        val icons = if (camRight) left else right
+        if (camLeft) {
+            right.addView(clock); addGap(right, 8.0)
+        } else {
+            left.addView(clock)
+            if (camRight) addGap(left, 8.0)
+        }
+        icons.addView(net, LinearLayout.LayoutParams(dp(app, 17.0), dp(app, 13.0)))
+        addGap(icons, 6.0)
+        icons.addView(pct); addGap(icons, 3.0)
+        icons.addView(batt, LinearLayout.LayoutParams(dp(app, 24.0), dp(app, 12.0)))
+
+        val box = FrameLayout(app).apply { setBackgroundColor(0xFF000000.toInt()) }
+        if (left.childCount > 0) box.addView(left, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, rowH, Gravity.TOP or Gravity.START).apply { leftMargin = dp(app, 16.0); topMargin = topPx })
+        if (right.childCount > 0) box.addView(right, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, rowH, Gravity.TOP or Gravity.END).apply { rightMargin = dp(app, 16.0); topMargin = topPx })
+
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
+        val lp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT, dp(app, barHdp), type,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.OPAQUE
+        )
+        lp.gravity = Gravity.TOP or Gravity.START
+        lp.x = 0
+        lp.y = 0
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        try {
+            manager.addView(box, lp)
+        } catch (e: Exception) {
+            return
+        }
+        barRoot = box; barClock = clock; barNet = net; barBatt = batt; barPct = pct; barManager = manager
+        refreshBar()
+        main.removeCallbacks(barTick)
+        main.postDelayed(barTick, 15_000)
+    }
+
+    /** Memperbarui jam, jaringan, dan baterai pada bar. */
+    private fun refreshBar() {
+        val ctx = barRoot?.context ?: return
+        val cal = Calendar.getInstance()
+        barClock?.text = "%02d:%02d".format(cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE))
+        try {
+            val bi = ctx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            if (bi != null) {
+                val level = bi.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                val scale = bi.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
+                val status = bi.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                val charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+                val pct = if (level >= 0 && scale > 0) level * 100 / scale else -1
+                barBatt?.set(pct, charging)
+                barPct?.text = if (pct >= 0) pct.toString() else ""
+            }
+        } catch (e: Exception) { /* tanpa data baterai */ }
+        var kind = 0
+        try {
+            val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val caps = cm?.getNetworkCapabilities(cm.activeNetwork)
+            if (caps != null) {
+                kind = if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) 2 else 1
+            }
+        } catch (e: Exception) { /* tanpa izin / API lama: dianggap offline */ }
+        barNet?.kind = kind
+        barNet?.invalidate()
+    }
+
+    /** Ikon jaringan: 0 offline (wifi redup + coretan), 1 Wi-Fi / lainnya, 2 data seluler (batang sinyal). */
+    private class NetView(ctx: Context, private val density: Float) : View(ctx) {
+        var kind = 0
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        override fun onDraw(c: Canvas) {
+            val w = width.toFloat()
+            val h = height.toFloat()
+            if (kind == 2) {
+                p.style = Paint.Style.FILL
+                p.color = 0xFFFFFFFF.toInt()
+                val bw = w / 7f
+                for (i in 0 until 4) {
+                    val bh = h * (0.35f + 0.65f * (i / 3f))
+                    val x = i * bw * 1.6f
+                    c.drawRoundRect(x, h - bh, x + bw, h, bw / 2, bw / 2, p)
+                }
+                return
+            }
+            p.style = Paint.Style.STROKE
+            p.strokeCap = Paint.Cap.ROUND
+            p.strokeWidth = 1.8f * density
+            p.color = if (kind == 0) 0x66FFFFFF else 0xFFFFFFFF.toInt()
+            val cx = w / 2
+            val cy = h - 1.5f * density
+            for (r in floatArrayOf(h * 0.95f, h * 0.62f)) {
+                c.drawArc(RectF(cx - r, cy - r, cx + r, cy + r), -135f, 90f, false, p)
+            }
+            p.style = Paint.Style.FILL
+            c.drawCircle(cx, cy - 0.5f * density, 1.6f * density, p)
+            if (kind == 0) {
+                p.style = Paint.Style.STROKE
+                c.drawLine(2 * density, 1 * density, w - 2 * density, h - 1 * density, p)
+            }
+        }
+    }
+
+    private class BatteryView(ctx: Context, private val density: Float) : View(ctx) {
+        private var pct = -1
+        private var charging = false
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        fun set(level: Int, ch: Boolean) { pct = level; charging = ch; invalidate() }
+        override fun onDraw(c: Canvas) {
+            val w = width.toFloat()
+            val h = height.toFloat()
+            val nub = 2f * density
+            val bodyW = w - nub
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 1.2f * density
+            p.color = 0xCCFFFFFF.toInt()
+            c.drawRoundRect(0.6f * density, 0.6f * density, bodyW, h - 0.6f * density, 3f * density, 3f * density, p)
+            p.style = Paint.Style.FILL
+            c.drawRoundRect(bodyW, h * 0.32f, w, h * 0.68f, 1f * density, 1f * density, p)
+            if (pct >= 0) {
+                p.color = when {
+                    charging -> 0xFF5BD6A0.toInt()
+                    pct <= 15 -> 0xFFFF5A5F.toInt()
+                    else -> 0xFFFFFFFF.toInt()
+                }
+                val inset = 2.4f * density
+                val fw = ((bodyW - inset * 2) * pct.coerceIn(0, 100) / 100f).coerceAtLeast(1f * density)
+                c.drawRoundRect(inset, inset, inset + fw, h - inset, 1.5f * density, 1.5f * density, p)
+            }
         }
     }
 

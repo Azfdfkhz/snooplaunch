@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthException, PostgrestException;
 import 'package:uuid/uuid.dart';
 import 'models.dart';
+import 'theme.dart' show kThemeModes;
 import '../services/backend_service.dart';
 import '../services/capture_service.dart';
 import '../services/cloud_photo_service.dart';
@@ -49,6 +50,9 @@ class AppState extends ChangeNotifier {
   /// False sampai pengguna menekan "Mulai" pada layar pembuka; setelah itu launcher langsung ke Home.
   bool onboarded = false;
   String theme = 'Terang';
+  /// Update 1.2.8: 'pkl' (absensi foto PKL) atau 'sekolah' (QR absen sekolah). Tidak menghapus data PKL.
+  String mode = 'pkl';
+  bool get schoolMode => mode == 'sekolah';
   bool busy = false; // cegah tap ganda
   final HybridSyncService sync = HybridSyncService();
   StreamSubscription? _authSub;
@@ -79,6 +83,8 @@ class AppState extends ChangeNotifier {
     weekendEndMin = _p!.getInt('weekend_end') ?? weekendEndMin;
     lateToleranceMin = _p!.getInt('late_tolerance') ?? lateToleranceMin;
     theme = _p!.getString('theme') ?? theme;
+    mode = _p!.getString('app_mode') == 'sekolah' ? 'sekolah' : 'pkl';
+    if (!kThemeModes.contains(theme)) theme = 'Terang'; // nilai lama/tidak dikenal (Update 1.2.8: Terang, Gelap, Ikuti sistem)
     schedule = readList('schedule', ScheduleItem.fromJson);
     reminders = readList('reminders', Reminder.fromJson);
     memories = readList('memories', Memory.fromJson);
@@ -259,6 +265,7 @@ class AppState extends ChangeNotifier {
       'work_end': workEndMin,
       'late_tolerance': lateToleranceMin,
       'theme': theme,
+      'app_mode': mode,
       'schedule': jsonEncode(schedule.map((e) => e.toJson()).toList()),
       'reminders': jsonEncode(reminders.map((e) => e.toJson()).toList()),
       'memories': jsonEncode(memories.map((e) => e.toJson()).toList()),
@@ -335,6 +342,7 @@ class AppState extends ChangeNotifier {
   }
 
   void setTheme(String value) { theme = value; changed(); }
+  void setMode(String value) { mode = value == 'sekolah' ? 'sekolah' : 'pkl'; changed(); }
 
   void setWorkHours({int? weekdayEnd, int? weekendEnd}) {
     if (weekdayEnd != null) workEndMin = weekdayEnd;

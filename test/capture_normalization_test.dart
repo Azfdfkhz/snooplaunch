@@ -61,4 +61,27 @@ void main() {
     expect(resultImg!.width, 800);
     expect(resultImg.height, 1000);
   });
+
+  // Update 1.2.8: foto kamera belakang tidak boleh ikut di-mirror.
+  test('processPhoto: unmirror=false (kamera belakang) tidak membalik, unmirror=true membalik', () async {
+    Future<img.Image> run(bool unmirror) async {
+      final f = File('${tempDir.path}/shot_$unmirror.jpg');
+      final im = img.Image(width: 800, height: 1000);
+      img.fill(im, color: img.ColorRgb8(255, 255, 255));
+      // Blok merah besar di sisi kiri.
+      img.fillRect(im, x1: 20, y1: 400, x2: 220, y2: 600, color: img.ColorRgb8(255, 0, 0));
+      await f.writeAsBytes(img.encodeJpg(im, quality: 95));
+      await CaptureService.processPhoto(f.path, unmirror: unmirror, ensurePortrait: false);
+      return img.decodeJpg(await f.readAsBytes())!;
+    }
+
+    bool isRed(img.Pixel p) => p.r > 200 && p.g < 80 && p.b < 80;
+
+    final rear = await run(false);
+    expect(isRed(rear.getPixel(120, 500)), isTrue, reason: 'kamera belakang: blok tetap di kiri');
+    expect(isRed(rear.getPixel(rear.width - 120, 500)), isFalse);
+
+    final front = await run(true);
+    expect(isRed(front.getPixel(front.width - 120, 500)), isTrue, reason: 'kamera depan: blok pindah ke kanan');
+  });
 }

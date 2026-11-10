@@ -9,7 +9,9 @@ import '../services/island_service.dart';
 import '../services/system_bridge.dart';
 import '../services/launcher_service.dart';
 import '../services/notification_service.dart';
+import '../core/snoop_logo.dart';
 import 'auth_screen.dart';
+import 'qr_screen.dart';
 import 'connect_desktop_screen.dart';
 import 'reminders_screen.dart';
 import '../core/state.dart';
@@ -53,12 +55,78 @@ class SettingsView extends StatelessWidget {
     name.dispose(); school.dispose(); company.dispose(); period.dispose();
   }
 
+  /// Update 1.2.8: pilih mode PKL atau Sekolah. Data PKL tidak dihapus; hanya tampilan Beranda yang berganti.
+  Future<void> _chooseMode(BuildContext context) async {
+    final s = AppScope.of(context);
+    final v = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(title: const Text('Mode aplikasi'), children: [
+        SimpleDialogOption(
+          onPressed: () => Navigator.pop(ctx, 'pkl'),
+          child: ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.work_rounded), title: const Text('PKL'), subtitle: const Text('Absensi foto, jadwal, dan dokumentasi PKL'), trailing: s.schoolMode ? null : const Icon(Icons.check_rounded)),
+        ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.pop(ctx, 'sekolah'),
+          child: ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.school_rounded), title: const Text('Sekolah'), subtitle: const Text('QR absen sekolah di Beranda; jadwal dan pengingat tetap bisa dipakai'), trailing: s.schoolMode ? const Icon(Icons.check_rounded) : null),
+        ),
+      ]),
+    );
+    if (v != null) s.setMode(v);
+  }
+
+  /// Update 1.2.8: pilih varian logo (dari SVG yang diberikan). Ikon peluncur Android mengikuti varian A.
+  Future<void> _chooseLogo(BuildContext context) async {
+    final logos = SnoopLogos.instance;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ListenableBuilder(
+          listenable: logos,
+          builder: (ctx, _) => SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Pilih logo', style: Theme.of(ctx).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              Wrap(spacing: 12, runSpacing: 12, children: [
+                for (final v in SnoopLogoVariant.values)
+                  Semantics(
+                    button: true,
+                    selected: logos.variant == v,
+                    label: 'Logo ${v.letter}, ${v.subtitle}',
+                    child: GestureDetector(
+                      onTap: () => logos.set(v),
+                      child: Container(
+                        width: 88,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: logos.variant == v ? C.accent : C.border, width: logos.variant == v ? 3 : 1),
+                        ),
+                        child: Column(children: [
+                          SnoopLogo(size: 64, variant: v),
+                          const SizedBox(height: 6),
+                          Text('${v.letter}. ${v.title}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                        ]),
+                      ),
+                    ),
+                  ),
+              ]),
+            ]),
+          ),
+        ),
+      ),
+    );
+    if (context.mounted) (context as Element).markNeedsBuild();
+  }
+
   Future<void> _chooseTheme(BuildContext context) async {
     final s = AppScope.of(context);
     final selected = await showDialog<String>(context: context, builder: (ctx) => SimpleDialog(
       title: const Text('Pilih tema'),
       children: [
-        for (final t in ['Terang']) SimpleDialogOption(
+        for (final t in kThemeModes) SimpleDialogOption(
           onPressed: () => Navigator.pop(ctx, t),
           child: Row(children: [Icon(s.theme == t ? Icons.radio_button_checked : Icons.radio_button_off), const SizedBox(width: 10), Text(t)]),
         ),
@@ -183,7 +251,7 @@ class SettingsView extends StatelessWidget {
     Widget row(IconData i, String t, {String? trailing, VoidCallback? onTap}) => Padding(padding: const EdgeInsets.only(bottom: 6), child: SnoopCard(
       onTap: onTap ?? () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Fitur ini belum tersedia.'))),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      child: Row(children: [Icon(i, size: 20), const SizedBox(width: 12), Expanded(child: Text(t)), if (trailing != null) Text(trailing, style: Theme.of(context).textTheme.bodySmall), const SizedBox(width: 4), const Icon(Icons.chevron_right, size: 18, color: C.text2)])));
+      child: Row(children: [Icon(i, size: 20), const SizedBox(width: 12), Expanded(child: Text(t)), if (trailing != null) Text(trailing, style: Theme.of(context).textTheme.bodySmall), const SizedBox(width: 4), Icon(Icons.chevron_right, size: 18, color: C.text2)])));
     return ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 96), children: [
       if (showTitle) const Padding(padding: EdgeInsets.only(bottom: S.x2), child: PageTitle('Pengaturan', icon: Icons.settings_outlined)),
       _profileCard(context, s),
@@ -236,7 +304,7 @@ class SettingsView extends StatelessWidget {
             builder: (context, _) => SwitchListTile(
               contentPadding: EdgeInsets.zero,
               secondary: const Icon(Icons.fullscreen_rounded, size: 20),
-              title: const Text('Sembunyikan status bar saat Island melebar'),
+              title: const Text('Status bar kustom (sembunyikan status bar sistem)'),
               subtitle: const Text('Agar ikon Bluetooth, mode getar, dll. tidak menutupi Island. Bulatan diam tidak memerlukannya.'),
               value: IslandController.instance.hideStatusBar,
               onChanged: IslandController.instance.setHideStatusBar,
@@ -265,8 +333,12 @@ class SettingsView extends StatelessWidget {
       group('Perangkat'),
       row(Icons.desktop_windows_outlined, 'Connect to Desktop', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ConnectDesktopScreen()))),
       row(Icons.home_outlined, 'Jadikan launcher default', onTap: () => _makeDefault(context)),
+      group('Mode'),
+      row(s.schoolMode ? Icons.school_rounded : Icons.work_rounded, 'Mode aplikasi', trailing: s.schoolMode ? 'Sekolah' : 'PKL', onTap: () => _chooseMode(context)),
+      row(Icons.qr_code_2_rounded, 'QR Absen Sekolah', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const QrScreen()))),
       group('Tampilan'),
       row(Icons.brightness_6_outlined, 'Tema', trailing: s.theme, onTap: () => _chooseTheme(context)),
+      row(Icons.interests_outlined, 'Logo', trailing: SnoopLogos.instance.variant.title, onTap: () => _chooseLogo(context)),
       group('Sinkronisasi'),
       _SyncCard(),
       group('Data'),

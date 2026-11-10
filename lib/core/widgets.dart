@@ -1,29 +1,42 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'braun.dart';
 import 'flame.dart';
+import 'snoop_logo.dart';
 import 'theme.dart';
 
 class SnoopCard extends StatelessWidget {
   final Widget child;
   final EdgeInsets padding;
-  final Color color;
+  /// null = permukaan kartu mengikuti tema (C.surface).
+  final Color? color;
   final VoidCallback? onTap;
   final double radius;
-  const SnoopCard({super.key, required this.child, this.padding = const EdgeInsets.all(14), this.color = C.surface, this.onTap, this.radius = R.small});
+  const SnoopCard({super.key, required this.child, this.padding = const EdgeInsets.all(14), this.color, this.onTap, this.radius = R.small});
   @override
-  Widget build(BuildContext context) => Material(
-        color: color,
-        borderRadius: BorderRadius.circular(radius),
-        elevation: 0,
-        shadowColor: Colors.black12,
-        child: InkWell(
+  Widget build(BuildContext context) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: color ?? C.surface,
           borderRadius: BorderRadius.circular(radius),
-          onTap: onTap,
-          child: Padding(padding: padding, child: child),
+          border: Border.all(color: B.hair),
+          boxShadow: const [
+            BoxShadow(color: Color(0x14FFFFFF), blurRadius: 0, offset: Offset(0, -1)),
+            BoxShadow(color: Color(0x1F1E1C18), blurRadius: 10, spreadRadius: -4, offset: Offset(0, 5)),
+          ],
+        ),
+        child: Material(
+          type: MaterialType.transparency,
+          borderRadius: BorderRadius.circular(radius),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(radius),
+            onTap: onTap,
+            child: Padding(padding: padding, child: child),
+          ),
         ),
       );
 }
 
+/// Tombol lebar penuh. dark = true -> tombol oranye (aksi utama); false -> tutup timbul netral.
 class PillButton extends StatelessWidget {
   final String label;
   final IconData? icon;
@@ -37,12 +50,16 @@ class PillButton extends StatelessWidget {
         child: FilledButton.icon(
           onPressed: onPressed,
           icon: icon == null ? const SizedBox.shrink() : Icon(icon, size: 18),
-          label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+          label: Text(label, style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: .2)),
           style: FilledButton.styleFrom(
-            backgroundColor: dark ? C.text : C.soft,
-            foregroundColor: dark ? Colors.white : C.text,
+            backgroundColor: dark ? C.accent : B.cap,
+            foregroundColor: dark ? Colors.white : C.ink,
             disabledBackgroundColor: C.soft,
-            shape: const StadiumBorder(),
+            disabledForegroundColor: C.text2,
+            elevation: dark ? 0 : 1,
+            shadowColor: Colors.black54,
+            side: BorderSide(color: dark ? B.orangeLo : B.hair),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           ),
         ),
       );
@@ -64,7 +81,7 @@ class SectionHeader extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                child: Text(action!, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: C.ink, decoration: TextDecoration.underline, decorationColor: C.accent, decorationThickness: 2)),
+                child: Text(action!, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: C.fg, decoration: TextDecoration.underline, decorationColor: C.accent, decorationThickness: 2)),
               ),
             ),
         ]),
@@ -74,14 +91,16 @@ class SectionHeader extends StatelessWidget {
 /// Chip status. Selalu berisi teks; `icon` menjadi penanda kedua supaya status tidak bergantung pada warna.
 class StatusChip extends StatelessWidget {
   final String text;
-  final Color bg;
-  final Color fg;
+  final Color? _bg;
+  final Color? _fg;
+  Color get bg => _bg ?? C.successSoft; // mengikuti tema
+  Color get fg => _fg ?? C.success;
   final IconData? icon;
-  const StatusChip(this.text, {super.key, this.bg = C.successSoft, this.fg = C.success, this.icon});
+  const StatusChip(this.text, {super.key, Color? bg, Color? fg, this.icon}) : _bg = bg, _fg = fg;
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8), border: Border.all(color: fg.withValues(alpha: .25))),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           if (icon != null) ...[Icon(icon, size: 14, color: fg), const SizedBox(width: 4)],
           Flexible(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: fg))),
@@ -89,32 +108,14 @@ class StatusChip extends StatelessWidget {
       );
 }
 
-/// Logo SNOOP: dua setengah lingkaran bertumpuk (ink + sky) dengan satu titik aksen.
+/// Logo SnoopLaunch. Sejak Update 1.2.8 menggambar logo dari SVG yang diberikan (lihat `snoop_logo.dart`).
+/// Parameter warna dipertahankan agar pemanggil lama tetap ter-compile, tetapi tidak dipakai lagi:
+/// logo baru membawa warnanya sendiri.
 class SnoopMark extends StatelessWidget {
   final double size;
-  final Color top;
-  final Color bottom;
-  final Color dot;
-  const SnoopMark({super.key, this.size = 64, this.top = C.ink, this.bottom = C.accent, this.dot = C.pink});
+  const SnoopMark({super.key, this.size = 64, Color? top, Color? bottom, Color? dot});
   @override
-  Widget build(BuildContext context) => Semantics(
-        label: 'SNOOP',
-        child: RepaintBoundary(child: CustomPaint(size: Size.square(size), painter: _MarkPainter(top, bottom, dot))),
-      );
-}
-
-class _MarkPainter extends CustomPainter {
-  final Color top, bottom, dot;
-  const _MarkPainter(this.top, this.bottom, this.dot);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    canvas.drawArc(Rect.fromLTWH(.04 * w, .04 * w, .80 * w, .80 * w), math.pi, math.pi, true, Paint()..color = top);
-    canvas.drawArc(Rect.fromLTWH(.16 * w, .20 * w, .80 * w, .80 * w), 0, math.pi, true, Paint()..color = bottom);
-    canvas.drawCircle(Offset(.80 * w, .22 * w), .09 * w, Paint()..color = dot);
-  }
-  @override
-  bool shouldRepaint(covariant _MarkPainter old) => old.top != top || old.bottom != bottom || old.dot != dot;
+  Widget build(BuildContext context) => SnoopLogo(size: size);
 }
 
 /// Kompatibilitas: nama lama untuk layar yang belum dimigrasi.
@@ -194,19 +195,19 @@ class PolaroidCard extends StatelessWidget {
                   height: photoHeight,
                   width: double.infinity,
                   child: Stack(fit: StackFit.expand, children: [
-                    photo ?? Container(color: C.soft, child: const Icon(Icons.image_outlined, color: C.text2)),
+                    photo ?? Container(color: C.soft, child: Icon(Icons.image_outlined, color: C.text2)),
                     if (badge != null) Positioned(top: 6, right: 6, child: badge!),
                   ]),
                 ),
               ),
               const SizedBox(height: 8),
               Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-              Text(meta, style: const TextStyle(fontSize: 10, color: C.text2)),
+              Text(meta, style: TextStyle(fontSize: 10, color: C.text2)),
               if (place != null)
                 Row(children: [
-                  const Icon(Icons.place_outlined, size: 10, color: C.text2),
+                  Icon(Icons.place_outlined, size: 10, color: C.text2),
                   const SizedBox(width: 2),
-                  Expanded(child: Text(place!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: C.text2))),
+                  Expanded(child: Text(place!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, color: C.text2))),
                 ]),
             ]),
           ),
@@ -214,6 +215,7 @@ class PolaroidCard extends StatelessWidget {
       ));
 }
 
+/// Navigasi bawah: badan perangkat berisi lima tombol timbul. Tombol aktif tampak tertekan dengan lampu oranye.
 class CapsuleNav extends StatelessWidget {
   final int index;
   final ValueChanged<int> onTap;
@@ -229,41 +231,54 @@ class CapsuleNav extends StatelessWidget {
   Widget build(BuildContext context) => SafeArea(
         top: false,
         child: Container(
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
           padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: C.ink,
-            borderRadius: BorderRadius.circular(R.pill),
-          ),
-          child: Row(
-            children: [
-              for (var i = 0; i < _items.length; i++)
-                Expanded(
-                  child: Semantics(
-                    button: true,
-                    label: _items[i].$2,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => onTap(i),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        constraints: const BoxConstraints(minHeight: 52),
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        decoration: BoxDecoration(
-                          color: i == index ? C.accent : Colors.transparent,
-                          borderRadius: BorderRadius.circular(30),
+          decoration: braunBody(radius: 26),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(
+              children: [
+                for (var i = 0; i < _items.length; i++)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: Semantics(
+                        button: true,
+                        selected: i == index,
+                        label: _items[i].$2,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => onTap(i),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 140),
+                            constraints: const BoxConstraints(minHeight: 54),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: i == index
+                                ? BoxDecoration(color: B.well, borderRadius: BorderRadius.circular(16), border: Border.all(color: B.hairStrong))
+                                : braunCap(radius: 16),
+                            child: Stack(alignment: Alignment.center, clipBehavior: Clip.none, children: [
+                              if (i == index)
+                                Positioned(
+                                  top: -5,
+                                  child: Container(
+                                    width: 14,
+                                    height: 3,
+                                    decoration: BoxDecoration(color: B.orange, borderRadius: BorderRadius.circular(2), boxShadow: const [BoxShadow(color: Color(0xB3F15A22), blurRadius: 5)]),
+                                  ),
+                                ),
+                              Column(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
+                                Icon(_items[i].$1, size: 21, color: i == index ? B.orangeLo : C.ink),
+                                const SizedBox(height: 2),
+                                Text(_items[i].$2, maxLines: 1, overflow: TextOverflow.clip, style: TextStyle(fontSize: 9.5, letterSpacing: .1, fontWeight: i == index ? FontWeight.w800 : FontWeight.w600, color: C.ink)),
+                              ]),
+                            ]),
+                          ),
                         ),
-                        child: Column(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(_items[i].$1, size: 21, color: i == index ? C.ink : C.onNight2),
-                          const SizedBox(height: 2),
-                          Text(_items[i].$2, maxLines: 1, overflow: TextOverflow.clip, style: TextStyle(fontSize: 10, letterSpacing: -0.2, fontWeight: i == index ? FontWeight.w800 : FontWeight.w500, color: i == index ? C.ink : C.onNight2)),
-                        ]),
                       ),
                     ),
                   ),
-                ),
-            ],
-          ),
+              ],
+            ),
+          ]),
         ),
       );
 }
@@ -280,7 +295,7 @@ class PageTitle extends StatelessWidget {
       ]);
 }
 
-/// Baris filter kapsul horizontal. Terpilih = kuning aksen (sama dengan beranda), tidak terpilih = soft.
+/// Baris filter kapsul horizontal. Terpilih = tombol oranye, tidak terpilih = tutup timbul.
 class FilterChipRow<T> extends StatelessWidget {
   final List<T> options;
   final T selected;
@@ -303,10 +318,12 @@ class FilterChipRow<T> extends StatelessWidget {
                   showCheckmark: false,
                   onSelected: (_) => onSelected(o),
                   selectedColor: C.accent,
-                  backgroundColor: C.soft,
-                  side: BorderSide.none,
-                  shape: const StadiumBorder(),
-                  labelStyle: TextStyle(fontWeight: FontWeight.w700, color: o == selected ? C.ink : C.text2),
+                  backgroundColor: B.cap,
+                  side: BorderSide(color: o == selected ? B.orangeLo : B.hair),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: o == selected ? 0 : 1,
+                  shadowColor: Colors.black54,
+                  labelStyle: TextStyle(fontWeight: FontWeight.w800, color: o == selected ? Colors.white : C.ink),
                 ),
               ),
           ],

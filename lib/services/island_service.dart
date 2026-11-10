@@ -12,11 +12,12 @@ import 'system_bridge.dart';
 /// Logika Dynamic Island (Update 1.2.0): antrean notifikasi dalam aplikasi, timer Pomodoro,
 /// dan pemutar musik lokal. Tidak ada data contoh; semua berasal dari aksi pengguna atau AppState.
 
-const kIslandYellow = Color(0xFFF4BD22);
-const kIslandMint = Color(0xFF5BD6A0);
-const kIslandPink = Color(0xFFFF7A9C);
-const kIslandBlue = Color(0xFF7CC4FA);
-const kIslandRed = Color(0xFFFF5A5F);
+// Palet Island: layar gelap kecil + aksen oranye Braun. Nama konstanta lama dipertahankan.
+const kIslandYellow = Color(0xFFF7794A); // aksen utama / peringatan (oranye terang di atas layar gelap)
+const kIslandMint = Color(0xFF9FD6A8);   // sukses (hijau fosfor)
+const kIslandPink = Color(0xFFF7794A);   // aksen musik
+const kIslandBlue = Color(0xFFD3D6CA);   // info (hijau-abu LCD)
+const kIslandRed = Color(0xFFE5543A);
 
 String mmss(Duration d) {
   final sec = (d.inMilliseconds / 1000).ceil().clamp(0, 359999);
@@ -55,8 +56,9 @@ class IslandController extends ChangeNotifier {
   static const _kHideSb = 'island_hide_sb';
 
   bool enabled = true;
-  /// Update 1.2.2: sembunyikan status bar sistem selama Island melebar (timer/musik/banner/panggilan/hub), supaya ikon
-  /// Bluetooth, mode getar, dll. tidak menutupi Island. Island bulat (diam) cukup kecil untuk muat di sekitar kamera.
+  /// Update 1.2.8: sembunyikan status bar sistem di semua aplikasi (di SNOOP lewat SystemChrome, di aplikasi lain lewat
+  /// jendela overlay hitam) dan tampilkan jam/jaringan/baterai kustom di kiri-kanan Island, supaya ikon sistem tidak
+  /// menutupi Island.
   bool hideStatusBar = true;
   /// Tab Musik: paksa pemutar lokal walau ada lagu dari aplikasi lain (Spotify, dll.).
   bool preferLocal = false;
@@ -135,6 +137,7 @@ class IslandController extends ChangeNotifier {
     final first = _app == null;
     _app = s;
     if (first) {
+      unawaited(_applyChrome());
       unawaited(_syncMute());
       unawaited(_openHubIfRequested()); // Activity baru dibuka dari pil native
     }
@@ -186,7 +189,9 @@ class IslandController extends ChangeNotifier {
   }
 
   Future<void> _applyChrome() async {
-    final hide = _wide && hideStatusBar && enabled && _foreground;
+    // Update 1.2.8: status bar sistem selalu disembunyikan selama SNOOP di layar (bukan hanya saat Island melebar);
+    // jam, jaringan, dan baterai digambar sendiri di kiri/kanan Island.
+    final hide = hideStatusBar && enabled && _foreground;
     if (hide == _chromeHidden) return;
     _chromeHidden = hide;
     try {

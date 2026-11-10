@@ -14,7 +14,10 @@ class CaptureResult {
   final double? lat, lng, accuracy;
   final String? placeName;
   final String locationNote; // penjelasan bila lokasi tidak tersedia
-  CaptureResult(this.photoPath, {required this.takenAt, this.lat, this.lng, this.accuracy, this.placeName, this.locationNote = ''});
+  /// Update 1.2.8: kamera yang diminta saat mengambil foto. Hanya kamera depan yang di-un-mirror;
+  /// foto kamera belakang tidak pernah dibalik.
+  final bool frontCamera;
+  CaptureResult(this.photoPath, {required this.takenAt, this.lat, this.lng, this.accuracy, this.placeName, this.locationNote = '', this.frontCamera = true});
 }
 
 enum CaptureFailureKind { cameraDenied, cameraUnavailable, unknown }
@@ -60,7 +63,7 @@ Future<void> _processPhotoFileWorker(PhotoTransformConfig cfg) async {
     image = img.copyRotate(image, angle: cfg.rotateDegrees);
   }
 
-  // 4. Kamera depan jangan mirror:
+  // 4. Kamera depan jangan mirror (Update 1.2.8: kamera belakang tidak melewati langkah ini, unmirror = false):
   // Kamera depan Android secara default menyimpan foto terbalik seperti cermin.
   // Membalik secara horizontal menghasilkan foto dengan orientasi asli (teks & wajah tidak mirror).
   if (cfg.unmirror) {
@@ -97,21 +100,24 @@ class CaptureService {
     await processPhoto(path, unmirror: false, rotateDegrees: 90, ensurePortrait: false);
   }
 
-  /// Membalik foto secara horizontal (toggle mirror).
+  /// Membalik foto secara horizontal (toggle mirror). Dipakai tombol Balik di pratinjau, untuk kamera depan maupun belakang.
   static Future<void> flipPhotoHorizontal(String path) async {
     await processPhoto(path, unmirror: true, rotateDegrees: 0, ensurePortrait: false);
   }
 
   /// [onStage] menerima teks tahap yang sedang berjalan (untuk indikator loading).
+  /// [camera] kamera yang dibuka. Update 1.2.8: foto kamera belakang TIDAK ikut di-mirror (flip horizontal hanya
+  /// untuk kamera depan). Catatan: kamera sistem tetap bisa dialihkan pengguna di dalam aplikasi kameranya; bila itu
+  /// terjadi hasilnya bisa dibalik lewat tombol Balik di layar pratinjau.
   /// Mengembalikan null bila pengguna menutup kamera tanpa mengambil foto.
   /// Melempar [CaptureFailure] bila kamera tidak dapat dipakai.
-  static Future<CaptureResult?> capture({void Function(String stage)? onStage}) async {
+  static Future<CaptureResult?> capture({void Function(String stage)? onStage, CameraDevice camera = CameraDevice.front}) async {
     onStage?.call('Membuka kamera…');
     final XFile? shot;
     try {
       shot = await ImagePicker().pickImage(
         source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.front,
+        preferredCameraDevice: camera,
       );
     } on PlatformException catch (e) {
       switch (e.code) {
@@ -130,8 +136,8 @@ class CaptureService {
 
     onStage?.call('Menyiapkan foto…');
     try {
-      // Normalisasi: luruskan (tidak miring) dan un-mirror kamera depan
-      await processPhoto(shot.path, unmirror: true, ensurePortrait: true);
+      // Normalisasi: luruskan (tidak miring); un-mirror hanya untuk kamera depan.
+      await processPhoto(shot.path, unmirror: camera == CameraDevice.front, ensurePortrait: true);
     } catch (_) {}
     final takenAt = DateTime.now();
 
@@ -165,7 +171,7 @@ class CaptureService {
     } catch (_) {
       note = 'Lokasi belum bisa didapat. Absensi dicatat tanpa lokasi.';
     }
-    return CaptureResult(shot.path, takenAt: takenAt, lat: lat, lng: lng, accuracy: acc, placeName: place, locationNote: note);
+    return CaptureResult(shot.path, takenAt: takenAt, lat: lat, lng: lng, accuracy: acc, placeName: place, locationNote: note, frontCamera: camera == CameraDevice.front);
   }
 
   /// Layanan lokasi perangkat aktif? Bila gagal membaca status, dianggap aktif agar tidak memblokir absensi.

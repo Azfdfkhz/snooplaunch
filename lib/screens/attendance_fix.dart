@@ -26,13 +26,13 @@ Future<String?> showAttendanceFix(
         padding: const EdgeInsets.fromLTRB(S.x3, 0, S.x3, S.x3),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           ListTile(
-            leading: const Icon(Icons.photo_camera_outlined, color: C.ink),
+            leading: Icon(Icons.photo_camera_outlined, color: C.fg),
             title: const Text('Foto ulang', style: TextStyle(fontWeight: FontWeight.w700)),
             subtitle: Text('Ganti foto dan lokasi. Jam absen $kind tetap ${hm(recordedAt)} WIB.'),
             onTap: () => Navigator.of(ctx).pop('photo'),
           ),
           ListTile(
-            leading: const Icon(Icons.restart_alt_rounded, color: C.ink),
+            leading: Icon(Icons.restart_alt_rounded, color: C.fg),
             title: const Text('Absen ulang', style: TextStyle(fontWeight: FontWeight.w700)),
             subtitle: Text('Batalkan absen $kind ini, lalu absen lagi. Jam dicatat ulang.'),
             onTap: () => Navigator.of(ctx).pop('redo'),

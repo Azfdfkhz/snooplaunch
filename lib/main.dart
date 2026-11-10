@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'core/dynamic_island.dart';
+import 'core/snoop_logo.dart';
 import 'core/state.dart';
 import 'core/theme.dart';
 import 'screens/shell.dart';
@@ -30,6 +31,7 @@ Future<void> main() async {
 
   final state = AppState();
   await state.load(); // hanya membaca penyimpanan lokal, cepat
+  await SnoopLogos.instance.load(); // varian logo pilihan (Update 1.2.8)
   await IslandController.instance.load(); // preferensi Dynamic Island + statistik Pomodoro (lokal)
   MirrorService.instance.init(); // jembatan status berbagi layar (Connect to Desktop)
   runApp(AppScope(state: state, child: const SnoopApp()));
@@ -37,17 +39,59 @@ Future<void> main() async {
   unawaited(state.startBackground());
 }
 
-class SnoopApp extends StatelessWidget {
+class SnoopApp extends StatefulWidget {
   const SnoopApp({super.key});
+  @override
+  State<SnoopApp> createState() => _SnoopAppState();
+}
+
+class _SnoopAppState extends State<SnoopApp> with WidgetsBindingObserver {
+  bool? _lastDark;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Mode "Ikuti sistem": bangun ulang saat pengaturan gelap/terang sistem berubah.
+  @override
+  void didChangePlatformBrightness() {
+    if (mounted) setState(() {});
+  }
+
+  /// Update 1.2.8: widget `const` tidak ikut dibangun ulang saat token warna berubah, jadi saat tema berganti seluruh
+  /// pohon ditandai kotor sekali (sama seperti hot reload).
+  void _rebuildAll() {
+    void visit(Element e) {
+      e.markNeedsBuild();
+      e.visitChildren(visit);
+    }
+
+    WidgetsBinding.instance.rootElement?.visitChildren(visit);
+  }
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
         animation: AppScope.of(context),
         builder: (context, _) {
           final state = AppScope.of(context);
+          final platformDark = WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark;
+          final dark = resolveDark(state.theme, platformDark);
+          final flipped = _lastDark != null && _lastDark != dark;
+          _lastDark = dark;
+          final theme = snoopTheme(dark: dark); // juga mengatur C.dark sebelum pohon widget dibangun
+          if (flipped) WidgetsBinding.instance.addPostFrameCallback((_) => _rebuildAll());
           return MaterialApp(
             title: 'SNOOP',
             debugShowCheckedModeBanner: false,
-            theme: snoopTheme(),
+            theme: theme,
             // Gulir memantul seperti iOS, tanpa efek glow Android.
             scrollBehavior: const _SnoopScroll(),
             // Dynamic Island melayang di atas semua halaman (termasuk layar yang dibuka lewat push).
@@ -119,7 +163,7 @@ class _ErrorCard extends StatelessWidget {
           textAlign: TextAlign.center,
           maxLines: 8,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 11, color: C.text, fontWeight: FontWeight.w500, decoration: TextDecoration.none),
+          style: TextStyle(fontSize: 11, color: C.text, fontWeight: FontWeight.w500, decoration: TextDecoration.none),
         ),
       );
 }
