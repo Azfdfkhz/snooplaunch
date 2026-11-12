@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
+import '../core/attendance_session.dart';
 import '../core/braun.dart';
 import '../core/launcher_widgets.dart';
 import '../core/memory_photo.dart';
@@ -48,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (s.schoolMode)
             _schoolQrCard(context)
           else ...[
-            _Tick(builder: (ctx, now) => _attendanceWidget(ctx, s)),
+            _SessionArea(builder: (ctx, state, now, session) => _sessionCard(ctx, state, now, session)),
             ..._serverAlert(context, s),
           ],
           const SizedBox(height: S.x3),
@@ -219,84 +221,260 @@ class _HomeScreenState extends State<HomeScreen> {
         },
       );
 
-  Widget _attendanceWidget(BuildContext context, AppState s) {
-    final now = DateTime.now();
+  // ---------------------------------------------------------------- Sesi absensi dinamis (PRD 1.3.0)
+  //
+  // Kartu absensi mengikuti fase hari ini (lihat core/attendance_session.dart). Di luar jendela masuk dan
+  // pulang, kartu menampilkan status dan aktivitas pengguna, bukan tombol absen yang nonaktif.
+  // Hanya penyajian yang berubah: pencatatan tetap lewat alur yang sama (_startAttendance, CheckInScreen).
+
+  /// Chip status absensi. Data yang baru tersimpan di perangkat TIDAK ditampilkan sebagai berhasil;
+  /// status koneksi server dibahas terpisah di kartu peringatan di bawah.
+  /// [plain] true bila isinya hanya "hadir" atau "pulang" yang sudah di server dan tidak perlu diulang di kartu Selesai.
+  ({String text, Color bg, Color fg, IconData icon, bool plain}) _statusChip(AppState s, Attendance att) {
+    final deviceTime = att.offlineTime ? ' · jam perangkat' : '';
+    if (!att.synced) {
+      final out = att.checkOutAt != null;
+      return (text: '${out ? 'Pulang' : 'Masuk'} ${hm(att.checkOutAt ?? att.checkInAt)} · belum di server', bg: C.accentSoft, fg: C.ink, icon: Icons.hourglass_top_rounded, plain: false);
+    }
+    return switch (s.todayStatus) {
+      AttendanceStatus.late => (text: 'Terlambat ${hm(att.checkInAt)}$deviceTime', bg: C.warningSoft, fg: C.warning, icon: Icons.watch_later_rounded, plain: false),
+      AttendanceStatus.checkedOut => (text: 'Pulang ${hm(att.checkOutAt ?? att.checkInAt)}$deviceTime', bg: C.successSoft, fg: C.success, icon: Icons.logout_rounded, plain: !att.offlineTime),
+      AttendanceStatus.needsAttention => (text: 'Perlu perhatian', bg: C.errorSoft, fg: C.error, icon: Icons.error_outline_rounded, plain: false),
+      AttendanceStatus.pending => (text: 'Menunggu sinkronisasi', bg: C.accentSoft, fg: C.ink, icon: Icons.sync_rounded, plain: false),
+      _ => (text: 'Hadir ${hm(att.checkInAt)}$deviceTime', bg: C.successSoft, fg: C.success, icon: Icons.check_circle_rounded, plain: !att.offlineTime),
+    };
+  }
+
+  /// Badan kartu. [tint] (token status yang sudah ada) mewarnai permukaan plastik; tanpa tint = badan Braun biasa.
+  Widget _sessionShell(List<Widget> children, {Color? tint}) {
+    var deco = braunBody(radius: R.widget);
+    if (tint != null) {
+      Color t(Color base) => Color.alphaBlend(tint.withValues(alpha: .7), base);
+      deco = deco.copyWith(
+        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [t(B.bodyHi), t(B.body), t(B.bodyLo)], stops: const [0, .45, 1]),
+      );
+    }
+    return SizedBox(
+      width: double.infinity,
+      child: Container(
+        padding: const EdgeInsets.all(S.x5),
+        decoration: deco,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
+      ),
+    );
+  }
+
+  Widget _sessionHeader({required String title, String? subtitle, IconData? icon, Widget? lead}) => Row(children: [
+        lead ??
+            Container(
+              width: 48,
+              height: 48,
+              decoration: braunCap(radius: 16),
+              child: Icon(icon, size: 24, color: B.orangeLo),
+            ),
+        const SizedBox(width: S.x3),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // liveRegion: perubahan fase (mis. jendela masuk terbuka) diumumkan ke pembaca layar.
+            Semantics(liveRegion: true, child: Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.onNight, letterSpacing: -.2))),
+            if (subtitle != null) ...[
+              const SizedBox(height: 2),
+              Text(subtitle, style: TextStyle(fontSize: 13, color: C.onNight2, height: 1.25)),
+            ],
+          ]),
+        ),
+      ]);
+
+  Widget _sessionButton({required String label, required IconData icon, required VoidCallback onPressed, bool quiet = false}) {
+    void tap() {
+      HapticFeedback.selectionClick();
+      onPressed();
+    }
+
+    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(18));
+    const textStyle = TextStyle(fontWeight: FontWeight.w800, fontSize: 15);
+    return Pressable(
+      child: SizedBox(
+        height: 52,
+        width: double.infinity,
+        child: quiet
+            ? OutlinedButton.icon(
+                onPressed: tap,
+                icon: Icon(icon, size: 20),
+                label: Text(label, style: textStyle),
+                style: OutlinedButton.styleFrom(foregroundColor: C.ink, side: BorderSide(color: B.hairStrong), shape: shape),
+              )
+            : FilledButton.icon(
+                onPressed: tap,
+                icon: Icon(icon, size: 20),
+                label: Text(label, style: textStyle),
+                style: FilledButton.styleFrom(
+                  backgroundColor: C.accent,
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: B.orangeLo),
+                  shape: shape,
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _sessionCard(BuildContext context, AppState s, DateTime now, AttendanceSession ss) {
     final att = s.today;
-    final canOut = att != null && att.checkOutAt == null && att.status != AttendanceStatus.leave;
-    final done = att?.checkOutAt != null;
-    final deviceTime = att?.offlineTime == true ? ' · jam perangkat' : '';
+    final needsRecord = ss.phase != SessionPhase.beforeEntry && ss.phase != SessionPhase.entryOpen && ss.phase != SessionPhase.missed;
+    if (att == null && needsRecord) return const SizedBox.shrink(); // data berubah di antara dua frame; frame berikutnya benar
+    final end = s.workEndFor(now);
+    DateTime at(int min) => DateTime(now.year, now.month, now.day, min ~/ 60, min % 60);
+    final week = _WeekRow(
+      marks: _weekMarks(s, now),
+      todayIndex: now.weekday - 1,
+      pulseToday: ss.phase == SessionPhase.entryOpen || ss.phase == SessionPhase.exitOpen,
+    );
+    final streak = StreakBadge(days: s.streak, dark: true, onTap: () => openStreak(context, s));
+    const gap = SizedBox(height: S.x4);
 
-    // Satu chip status absensi. Data yang baru tersimpan di perangkat TIDAK ditampilkan sebagai berhasil;
-    // status koneksi server dibahas terpisah di kartu peringatan di bawah.
-    final leave = att?.status == AttendanceStatus.leave;
-    final (String chipText, Color chipBg, Color chipFg, IconData chipIcon) = att == null
-        ? ('Belum absen', C.warningSoft, C.warning, Icons.schedule_rounded)
-        : att.status == AttendanceStatus.leave
-            ? ('${leaveLabel(att.leaveType)} hari ini', C.accentSoft, C.ink, Icons.event_busy_rounded)
-        : !att.synced
-            ? ('${done ? 'Pulang' : 'Masuk'} ${hm(att.checkOutAt ?? att.checkInAt)} · belum di server', C.accentSoft, C.ink, Icons.hourglass_top_rounded)
-            : switch (s.todayStatus) {
-                AttendanceStatus.late => ('Terlambat ${hm(att.checkInAt)}$deviceTime', C.warningSoft, C.warning, Icons.watch_later_rounded),
-                AttendanceStatus.checkedOut => ('Pulang ${hm(att.checkOutAt ?? att.checkInAt)}$deviceTime', C.successSoft, C.success, Icons.logout_rounded),
-                AttendanceStatus.needsAttention => ('Perlu perhatian', C.errorSoft, C.error, Icons.error_outline_rounded),
-                AttendanceStatus.pending => ('Menunggu sinkronisasi', C.accentSoft, C.ink, Icons.sync_rounded),
-                _ => ('Hadir ${hm(att.checkInAt)}$deviceTime', C.successSoft, C.success, Icons.check_circle_rounded),
-              };
+    Widget meta({bool withChip = true}) {
+      final c = att == null || !withChip ? null : _statusChip(s, att);
+      return Wrap(spacing: S.x3, runSpacing: S.x2, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        if (c != null) StatusChip(c.text, bg: c.bg, fg: c.fg, icon: c.icon),
+        streak,
+      ]);
+    }
 
-    // Jendela waktu: absen masuk dibuka 06:00; absen pulang dibuka pada jam pulang hari itu (17:00 Senin–Jumat).
-    final nowMin = now.hour * 60 + now.minute;
-    final String? waitMsg = (att == null && nowMin < 6 * 60)
-        ? 'Absen masuk dibuka pukul 06:00'
-        : (canOut && nowMin < s.workEndFor(now))
-            ? 'Absen pulang dibuka pukul ${minToHm(s.workEndFor(now))}'
-            : null;
-    final actionLabel = done ? 'Absensi selesai' : (leave ? 'Izin tercatat' : (canOut ? 'Absen pulang' : 'Absen masuk'));
-    void open() => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CheckInScreen(isOut: canOut)));
-
-    return Container(
-      padding: const EdgeInsets.all(S.x5),
-      decoration: braunBody(radius: R.widget),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Absensi hari ini', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.onNight, letterSpacing: -.2)),
-        const SizedBox(height: S.x1),
-        Text('Jam kerja ${minToHm(s.workStartMin)} – ${minToHm(s.workEndFor(now))}', style: TextStyle(fontSize: 13, color: C.onNight2)),
-        const SizedBox(height: S.x3),
-        Wrap(spacing: S.x3, runSpacing: S.x2, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          StatusChip(chipText, bg: chipBg, fg: chipFg, icon: chipIcon),
-          StreakBadge(days: s.streak, dark: true, onTap: () => openStreak(context, s)),
-        ]),
-        const SizedBox(height: S.x4),
-        _WeekRow(marks: _weekMarks(s, now), todayIndex: now.weekday - 1),
-        const SizedBox(height: S.x4),
-        if (waitMsg != null)
+    switch (ss.phase) {
+      case SessionPhase.beforeEntry:
+        {
+        return _sessionShell([
+          _sessionHeader(icon: Icons.schedule_rounded, title: 'Absen masuk dibuka ${minToHm(kEntryOpenMin)}', subtitle: 'Jam kerja ${minToHm(s.workStartMin)} sampai ${minToHm(end)}'),
+          gap,
+          meta(),
+          gap,
+          week,
+        ]);
+        }
+      case SessionPhase.entryOpen:
+        {
+        final limit = s.workStartMin + s.lateToleranceMin;
+        final deadline = at(limit).add(const Duration(minutes: 1)); // menit batas masih dihitung tepat waktu
+        final sub = now.isBefore(deadline)
+            ? 'Tepat waktu sampai ${minToHm(limit)}, sisa ${formatRemaining(deadline.difference(now))}'
+            : 'Lewat ${minToHm(limit)}, akan tercatat Terlambat';
+        return _sessionShell(tint: C.accentSoft, [
+          _sessionHeader(icon: Icons.fingerprint_rounded, title: 'Waktunya absen masuk', subtitle: sub),
+          gap,
+          meta(),
+          gap,
+          week,
+          gap,
+          _sessionButton(label: 'Absen masuk', icon: Icons.photo_camera_outlined, onPressed: () => _startAttendance(context, s)),
+        ]);
+        }
+      case SessionPhase.working:
+        {
+        final a = att!;
+        final total = at(end).difference(a.checkInAt);
+        final progress = total.inSeconds <= 0 ? 0.0 : (now.difference(a.checkInAt).inSeconds / total.inSeconds).clamp(0.0, 1.0);
+        final reduce = MediaQuery.disableAnimationsOf(context);
+        return _sessionShell([
+          _sessionHeader(icon: Icons.work_history_outlined, title: 'Sedang bekerja', subtitle: 'Masuk ${hm(a.checkInAt)}, sudah ${formatElapsed(a.checkInAt, now)}'),
+          gap,
+          meta(),
+          gap,
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: S.x4, vertical: S.x3),
+            padding: const EdgeInsets.all(S.x4),
             decoration: braunLcd(radius: R.small),
-            child: Row(children: [
-              const Icon(Icons.schedule_rounded, size: 18, color: B.orangeLo),
-              const SizedBox(width: S.x2),
-              Expanded(child: Text(waitMsg, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: B.lcdInk))),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.schedule_rounded, size: 18, color: B.orangeLo),
+                const SizedBox(width: S.x2),
+                Expanded(child: Text('Absen pulang dibuka ${minToHm(end)}, ${formatRemaining(at(end).difference(now))} lagi', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: B.lcdInk))),
+              ]),
+              const SizedBox(height: S.x3),
+              Semantics(
+                label: 'Progres jam kerja ${(progress * 100).round()} persen',
+                excludeSemantics: true,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(end: progress),
+                  duration: reduce ? Duration.zero : const Duration(milliseconds: 600),
+                  curve: Curves.easeOutCubic,
+                  builder: (_, v, __) => ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(value: v, minHeight: 6, backgroundColor: B.well, color: C.accent),
+                  ),
+                ),
+              ),
             ]),
           ),
-        if (waitMsg == null)
-        SizedBox(
-          height: 52,
-          child: FilledButton.icon(
-            onPressed: (done || leave) ? null : (att == null ? () { _startAttendance(context, s); } : open),
-            icon: Icon(done ? Icons.check_rounded : (leave ? Icons.event_busy_rounded : Icons.photo_camera_outlined), size: 20),
-            label: Text(actionLabel, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-            style: FilledButton.styleFrom(
-              backgroundColor: C.accent,
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: B.well,
-              disabledForegroundColor: C.onNight2,
-              side: const BorderSide(color: B.orangeLo),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          gap,
+          week,
+        ]);
+        }
+      case SessionPhase.exitOpen:
+        {
+        final a = att!;
+        return _sessionShell(tint: C.accentSoft, [
+          _sessionHeader(icon: Icons.logout_rounded, title: 'Waktunya absen pulang', subtitle: 'Masuk ${hm(a.checkInAt)}, bekerja ${formatElapsed(a.checkInAt, now)}'),
+          gap,
+          meta(),
+          gap,
+          week,
+          gap,
+          _sessionButton(label: 'Absen pulang', icon: Icons.photo_camera_outlined, onPressed: () => _push(const CheckInScreen(isOut: true))),
+        ]);
+        }
+      case SessionPhase.done:
+        {
+        final a = att!;
+        final reduce = MediaQuery.disableAnimationsOf(context);
+        return _sessionShell(tint: C.successSoft, [
+          _sessionHeader(
+            title: 'Absensi hari ini selesai',
+            subtitle: 'Masuk ${hm(a.checkInAt)}, pulang ${hm(a.checkOutAt ?? a.checkInAt)}',
+            lead: TweenAnimationBuilder<double>(
+              tween: Tween(begin: .6, end: 1),
+              duration: reduce ? Duration.zero : const Duration(milliseconds: 380),
+              curve: Curves.easeOutBack,
+              builder: (_, v, child) => Transform.scale(scale: v, child: child),
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: C.successSoft, border: Border.all(color: C.success.withValues(alpha: .5), width: 1.5)),
+                child: Icon(Icons.check_rounded, size: 26, color: C.success),
+              ),
             ),
           ),
-        ),
-      ]),
-    );
+          gap,
+          // Chip hanya bila ada yang perlu diperhatikan (belum di server, jam perangkat, perlu perhatian).
+          meta(withChip: !_statusChip(s, a).plain),
+          gap,
+          week,
+        ]);
+        }
+      case SessionPhase.leave:
+        {
+        final a = att!;
+        final note = (a.note ?? '').trim();
+        return _sessionShell(tint: C.accentSoft, [
+          _sessionHeader(icon: Icons.event_busy_rounded, title: '${leaveLabel(a.leaveType)} hari ini', subtitle: note.isEmpty ? 'Tercatat' : note),
+          gap,
+          meta(withChip: false),
+          gap,
+          week,
+        ]);
+        }
+      case SessionPhase.missed:
+        {
+        return _sessionShell(tint: C.warningSoft, [
+          _sessionHeader(icon: Icons.history_toggle_off_rounded, title: 'Absen masuk terlewat', subtitle: 'Belum ada catatan hari ini. Kamu masih bisa mencatatnya.'),
+          gap,
+          meta(),
+          gap,
+          week,
+          gap,
+          _sessionButton(label: 'Catat sekarang', icon: Icons.edit_calendar_outlined, quiet: true, onPressed: () => _startAttendance(context, s)),
+        ]);
+        }
+    }
   }
 
   /// Absen masuk: pilih hadir (foto) atau izin/sakit/lainnya (tanpa foto).
@@ -586,7 +764,8 @@ class _HomeScreenState extends State<HomeScreen> {
             button: true,
             label: it.$2,
             excludeSemantics: true,
-            child: InkWell(
+            child: Pressable(
+              child: InkWell(
               borderRadius: BorderRadius.circular(R.small),
               onTap: it.$3,
               child: Padding(
@@ -602,6 +781,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(it.$2, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: C.onNight2)),
                 ]),
               ),
+            ),
             ),
           ),
         ),
@@ -743,6 +923,146 @@ class _TickState extends State<_Tick> {
   Widget build(BuildContext context) => widget.builder(context, _now);
 }
 
+/// Pemilik jendela waktu kartu absensi. Menghitung fase dari jam dan data setiap build, lalu memasang SATU timer
+/// yang berbunyi tepat di batas fase (atau tiap 30 detik untuk teks hitung mundur, mana yang lebih dulu).
+/// Dihitung ulang juga saat aplikasi kembali aktif, karena timer tidak berjalan di latar belakang.
+/// Pergantian fase beranimasi (pudar + tinggi kartu menyesuaikan); tanpa animasi bila animasi sistem dimatikan.
+class _SessionArea extends StatefulWidget {
+  final Widget Function(BuildContext, AppState, DateTime, AttendanceSession) builder;
+  const _SessionArea({required this.builder});
+  @override
+  State<_SessionArea> createState() => _SessionAreaState();
+}
+
+class _SessionAreaState extends State<_SessionArea> with WidgetsBindingObserver {
+  static const _tick = Duration(seconds: 30);
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) setState(() {});
+  }
+
+  void _arm(DateTime next, DateTime now) {
+    _timer?.cancel();
+    final wait = next.difference(now);
+    var d = wait > _tick ? _tick : wait + const Duration(milliseconds: 250);
+    if (d < const Duration(milliseconds: 500)) d = const Duration(milliseconds: 500);
+    _timer = Timer(d, () {
+      if (mounted) setState(() {});
+    });
+  }
+
+  static TodayRecord _recordOf(Attendance? a) {
+    if (a == null) return TodayRecord.none;
+    if (a.status == AttendanceStatus.leave) return TodayRecord.leave;
+    return a.checkOutAt != null ? TodayRecord.checkedOut : TodayRecord.checkedIn;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context);
+    final now = DateTime.now();
+    final session = resolveAttendanceSession(now: now, record: _recordOf(s.today), workEndMin: s.workEndFor(now));
+    _arm(session.nextChange, now);
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    final d = reduce ? Duration.zero : const Duration(milliseconds: 280);
+    return AnimatedSize(
+      duration: d,
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: AnimatedSwitcher(
+        duration: d,
+        switchInCurve: Curves.easeOut,
+        switchOutCurve: Curves.easeIn,
+        layoutBuilder: (current, previous) => Stack(
+          alignment: Alignment.topCenter,
+          children: [...previous, if (current != null) current],
+        ),
+        child: KeyedSubtree(key: ValueKey(session.phase), child: widget.builder(context, s, now, session)),
+      ),
+    );
+  }
+}
+
+/// Cincin yang membesar dan memudar di sekitar [child] selama [active]. Hanya dilukis (tidak mengubah layout),
+/// berhenti bila tidak aktif atau animasi sistem dimatikan.
+class _PulseRing extends StatefulWidget {
+  final bool active;
+  final Widget child;
+  const _PulseRing({required this.active, required this.child});
+  @override
+  State<_PulseRing> createState() => _PulseRingState();
+}
+
+class _PulseRingState extends State<_PulseRing> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600));
+
+  bool get _run => widget.active && !MediaQuery.disableAnimationsOf(context);
+
+  void _sync() {
+    if (_run) {
+      if (!_c.isAnimating) _c.repeat();
+    } else if (_c.isAnimating) {
+      _c.stop();
+      _c.value = 0;
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PulseRing old) {
+    super.didUpdateWidget(old);
+    _sync();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_run) return widget.child;
+    return Stack(alignment: Alignment.center, clipBehavior: Clip.none, children: [
+      ExcludeSemantics(
+        child: IgnorePointer(
+          child: AnimatedBuilder(
+            animation: _c,
+            builder: (_, __) => Opacity(
+              opacity: (1 - _c.value) * .6,
+              child: Transform.scale(
+                scale: 1 + .35 * _c.value,
+                child: Container(width: 32, height: 32, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: C.accent, width: 2))),
+              ),
+            ),
+          ),
+        ),
+      ),
+      widget.child,
+    ]);
+  }
+}
+
 class _Pill extends StatelessWidget {
   final IconData icon;
   final String text;
@@ -755,7 +1075,8 @@ class _Pill extends StatelessWidget {
         button: onTap != null,
         label: semantics,
         excludeSemantics: true,
-        child: DecoratedBox(
+        child: Pressable(
+          child: DecoratedBox(
           decoration: braunCap(radius: 24),
           child: Material(
             type: MaterialType.transparency,
@@ -777,6 +1098,7 @@ class _Pill extends StatelessWidget {
             ),
           ),
           ),
+          ),
         ),
       );
 }
@@ -786,7 +1108,9 @@ enum _DayMark { present, late, pending, missed, today, future, off, leave }
 class _WeekRow extends StatelessWidget {
   final List<_DayMark> marks;
   final int todayIndex;
-  const _WeekRow({required this.marks, required this.todayIndex});
+  /// Cincin berdenyut di titik hari ini selama jendela absen terbuka (penanda "ada yang perlu dilakukan").
+  final bool pulseToday;
+  const _WeekRow({required this.marks, required this.todayIndex, this.pulseToday = false});
 
   static String _label(_DayMark m) => switch (m) {
         _DayMark.present => 'hadir',
@@ -806,7 +1130,7 @@ class _WeekRow extends StatelessWidget {
             label: '${kDays[i]}: ${_label(marks[i])}',
             excludeSemantics: true,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              _dot(marks[i], i == todayIndex),
+              _PulseRing(active: pulseToday && i == todayIndex, child: _dot(marks[i], i == todayIndex)),
               const SizedBox(height: S.x1),
               Text(kDaysShort[i], style: TextStyle(fontSize: 11, color: i == todayIndex ? C.onNight : C.onNight2, fontWeight: i == todayIndex ? FontWeight.w800 : FontWeight.w400)),
             ]),
@@ -874,13 +1198,15 @@ class _Device extends StatelessWidget {
   final Widget child;
   const _Device({required this.child});
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-        decoration: braunBody(radius: R.widget),
-        child: Material(
-          type: MaterialType.transparency,
-          borderRadius: BorderRadius.circular(R.widget),
-          clipBehavior: Clip.antiAlias,
-          child: child,
+  Widget build(BuildContext context) => Pressable(
+        child: DecoratedBox(
+          decoration: braunBody(radius: R.widget),
+          child: Material(
+            type: MaterialType.transparency,
+            borderRadius: BorderRadius.circular(R.widget),
+            clipBehavior: Clip.antiAlias,
+            child: child,
+          ),
         ),
       );
 }

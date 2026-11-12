@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="a11y_service_label">SNOOP Status Bar</string>
+    <string name="a11y_service_description">Menggambar jam, jaringan, baterai, dan notifikasi di atas status bar sistem agar tidak menutupi Dynamic Island. SNOOP tidak membaca isi layar dan tidak merekam apa pun.</string>
+</resources>

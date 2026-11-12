@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'braun.dart';
@@ -14,26 +15,30 @@ class SnoopCard extends StatelessWidget {
   final double radius;
   const SnoopCard({super.key, required this.child, this.padding = const EdgeInsets.all(14), this.color, this.onTap, this.radius = R.small});
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-        decoration: BoxDecoration(
-          color: color ?? C.surface,
+  Widget build(BuildContext context) {
+    final card = DecoratedBox(
+      decoration: BoxDecoration(
+        color: color ?? C.surface,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: B.hair),
+        boxShadow: const [
+          BoxShadow(color: Color(0x14FFFFFF), blurRadius: 0, offset: Offset(0, -1)),
+          BoxShadow(color: Color(0x1F1E1C18), blurRadius: 10, spreadRadius: -4, offset: Offset(0, 5)),
+        ],
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(radius),
+        child: InkWell(
           borderRadius: BorderRadius.circular(radius),
-          border: Border.all(color: B.hair),
-          boxShadow: const [
-            BoxShadow(color: Color(0x14FFFFFF), blurRadius: 0, offset: Offset(0, -1)),
-            BoxShadow(color: Color(0x1F1E1C18), blurRadius: 10, spreadRadius: -4, offset: Offset(0, 5)),
-          ],
+          onTap: onTap,
+          child: Padding(padding: padding, child: child),
         ),
-        child: Material(
-          type: MaterialType.transparency,
-          borderRadius: BorderRadius.circular(radius),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(radius),
-            onTap: onTap,
-            child: Padding(padding: padding, child: child),
-          ),
-        ),
-      );
+      ),
+    );
+    // Umpan balik tekan hanya untuk kartu yang memang bisa diketuk.
+    return onTap == null ? card : Pressable(child: card);
+  }
 }
 
 /// Tombol lebar penuh. dark = true -> tombol oranye (aksi utama); false -> tutup timbul netral.
@@ -44,25 +49,28 @@ class PillButton extends StatelessWidget {
   final bool dark;
   const PillButton({super.key, required this.label, this.icon, this.onPressed, this.dark = true});
   @override
-  Widget build(BuildContext context) => SizedBox(
-        width: double.infinity,
-        height: 52,
-        child: FilledButton.icon(
-          onPressed: onPressed,
-          icon: icon == null ? const SizedBox.shrink() : Icon(icon, size: 18),
-          label: Text(label, style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: .2)),
-          style: FilledButton.styleFrom(
-            backgroundColor: dark ? C.accent : B.cap,
-            foregroundColor: dark ? Colors.white : C.ink,
-            disabledBackgroundColor: C.soft,
-            disabledForegroundColor: C.text2,
-            elevation: dark ? 0 : 1,
-            shadowColor: Colors.black54,
-            side: BorderSide(color: dark ? B.orangeLo : B.hair),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          ),
+  Widget build(BuildContext context) {
+    final button = SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: FilledButton.icon(
+        onPressed: onPressed,
+        icon: icon == null ? const SizedBox.shrink() : Icon(icon, size: 18),
+        label: Text(label, style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: .2)),
+        style: FilledButton.styleFrom(
+          backgroundColor: dark ? C.accent : B.cap,
+          foregroundColor: dark ? Colors.white : C.ink,
+          disabledBackgroundColor: C.soft,
+          disabledForegroundColor: C.text2,
+          elevation: dark ? 0 : 1,
+          shadowColor: Colors.black54,
+          side: BorderSide(color: dark ? B.orangeLo : B.hair),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         ),
-      );
+      ),
+    );
+    return onPressed == null ? button : Pressable(child: button);
+  }
 }
 
 class SectionHeader extends StatelessWidget {
@@ -349,7 +357,10 @@ class StreakBadge extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(R.small),
         onTap: onTap,
-        child: Padding(
+        child: Container(
+          // Target sentuh minimal 44 dp.
+          constraints: const BoxConstraints(minHeight: 44),
+          alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: S.x2, vertical: 6),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             FlameIcon(size: 20, color: flame),
@@ -357,6 +368,57 @@ class StreakBadge extends StatelessWidget {
             Text(lit ? '$days hari' : 'Mulai streak', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: fg)),
           ]),
         ),
+      ),
+    );
+  }
+}
+
+/// Umpan balik tekan: konten mengecil sedikit selama ditekan, lalu kembali.
+/// Memakai Listener, jadi tidak mengambil alih gestur: InkWell/tombol di dalamnya tetap bekerja seperti biasa.
+/// Skala baru berlaku setelah jeda singkat supaya geser (scroll) cepat tidak membuat kartu berkedip.
+/// Tidak beranimasi bila pengguna mematikan animasi sistem.
+class Pressable extends StatefulWidget {
+  final Widget child;
+  final double scale;
+  const Pressable({super.key, required this.child, this.scale = 0.97});
+  @override
+  State<Pressable> createState() => _PressableState();
+}
+
+class _PressableState extends State<Pressable> {
+  Timer? _hold;
+  bool _down = false;
+
+  void _press() {
+    _hold?.cancel();
+    _hold = Timer(const Duration(milliseconds: 70), () {
+      if (mounted) setState(() => _down = true);
+    });
+  }
+
+  void _release() {
+    _hold?.cancel();
+    if (_down && mounted) setState(() => _down = false);
+  }
+
+  @override
+  void dispose() {
+    _hold?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return widget.child;
+    return Listener(
+      onPointerDown: (_) => _press(),
+      onPointerUp: (_) => _release(),
+      onPointerCancel: (_) => _release(),
+      child: AnimatedScale(
+        scale: _down ? widget.scale : 1,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOutCubic,
+        child: widget.child,
       ),
     );
   }

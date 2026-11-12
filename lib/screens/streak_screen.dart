@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+import '../core/achievements.dart';
 import '../core/flame.dart';
+import '../core/models.dart';
 import '../core/state.dart';
 import '../core/braun.dart';
 import '../core/theme.dart';
@@ -117,6 +119,71 @@ class _StreakScreenState extends State<StreakScreen> {
     );
   }
 
+  /// Lencana dari data absensi nyata (lihat core/achievements.dart). Terbuka atau terkunci selalu punya ikon dan teks,
+  /// tidak hanya warna.
+  Widget _badges(AppState s) {
+    final fullDays = s.attendance.where((a) => a.status != AttendanceStatus.leave && a.checkOutAt != null).length;
+    final list = achievementsFor(longestStreak: s.longestStreak, presentDays: s.presentDayCount, fullDays: fullDays);
+    final open = list.where((a) => a.unlocked).length;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Expanded(child: Text('Lencana', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: C.onNight))),
+        Text('$open dari ${list.length} terbuka', style: TextStyle(fontSize: 12, color: C.onNight2)),
+      ]),
+      const SizedBox(height: S.x2),
+      LayoutBuilder(builder: (context, c) {
+        const gap = S.x2;
+        final w = (c.maxWidth - gap) / 2;
+        return Wrap(spacing: gap, runSpacing: gap, children: [for (final a in list) SizedBox(width: w, child: _badgeTile(a))]);
+      }),
+    ]);
+  }
+
+  Widget _badgeTile(Achievement a) {
+    final icon = switch (a.kind) {
+      AchievementKind.streak => FlameIcon(size: 22, color: a.unlocked ? C.ink : C.onNight2, core: a.unlocked ? C.accent : C.onNight2),
+      AchievementKind.presence => Icon(Icons.how_to_reg_rounded, size: 22, color: a.unlocked ? C.ink : C.onNight2),
+      AchievementKind.fullDay => Icon(Icons.task_alt_rounded, size: 22, color: a.unlocked ? C.ink : C.onNight2),
+    };
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      label: a.unlocked ? '${a.title}, terbuka. ${a.how}' : '${a.title}, terkunci, ${a.current} dari ${a.target}. ${a.how}',
+      child: Container(
+        padding: const EdgeInsets.all(S.x3),
+        decoration: a.unlocked
+            ? braunBody(radius: R.small)
+            : BoxDecoration(borderRadius: BorderRadius.circular(R.small), border: Border.all(color: B.hair), color: C.onNight.withValues(alpha: .05)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: a.unlocked ? braunCap(circle: true) : BoxDecoration(shape: BoxShape.circle, border: Border.all(color: B.hairStrong)),
+              child: icon,
+            ),
+            const Spacer(),
+            if (!a.unlocked) Icon(Icons.lock_outline_rounded, size: 16, color: C.onNight2),
+          ]),
+          const SizedBox(height: S.x2),
+          Text(a.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: C.onNight, height: 1.2)),
+          const SizedBox(height: 2),
+          Text(a.how, style: TextStyle(fontSize: 12, color: C.onNight2, height: 1.25)),
+          if (!a.unlocked) ...[
+            const SizedBox(height: S.x2),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(value: a.progress, minHeight: 5, backgroundColor: B.well, color: C.accent),
+            ),
+            const SizedBox(height: 4),
+            Text('${a.current} dari ${a.target}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: C.onNight2)),
+          ],
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = widget.s;
@@ -181,6 +248,8 @@ class _StreakScreenState extends State<StreakScreen> {
                   _Legend('Izin / sakit', C.accentSoft),
                   _Legend('Tidak hadir', C.errorSoft),
                 ]),
+                const SizedBox(height: S.x5),
+                _badges(s),
                 const SizedBox(height: S.x4),
                 Text(
                   'Streak bertambah setiap hari kerja dengan absensi. Akhir pekan tanpa absensi, izin, dan sakit tidak memutus streak. '
