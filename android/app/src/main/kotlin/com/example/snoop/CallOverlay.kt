@@ -5,7 +5,6 @@ import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
-import android.provider.Settings
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.MotionEvent
@@ -35,8 +34,7 @@ object CallOverlay {
     private var card: LinearLayout? = null
     private var shownKey: String? = null
 
-    fun canDraw(ctx: Context): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(ctx)
+    fun canDraw(ctx: Context): Boolean = OverlayHost.canDraw(ctx)
 
     /** Sentuhan: mengecil saat ditekan, memantul kembali saat dilepas. Tidak menelan klik. */
     private fun pressable(v: View) {
@@ -165,11 +163,7 @@ object CallOverlay {
         val root = FrameLayout(app).apply { setPadding(px(8f), px(6f), px(8f), 0) }
         root.addView(card, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
 
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
+        val type = OverlayHost.type()
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -181,11 +175,12 @@ object CallOverlay {
             PixelFormat.TRANSLUCENT
         )
         lp.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        lp.y = OverlayHost.cameraBottomPx(app) // di bawah kamera depan, bukan di barisnya
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
 
-        val manager = app.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val manager = OverlayHost.windowManager(app)
         try {
             manager.addView(root, lp)
         } catch (e: Exception) {

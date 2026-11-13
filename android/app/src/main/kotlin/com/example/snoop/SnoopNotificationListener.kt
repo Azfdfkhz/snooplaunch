@@ -2,6 +2,7 @@ package com.example.snoop
 
 import android.app.ActivityOptions
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
@@ -60,6 +61,19 @@ object IslandBridge {
     fun setAppVisible(v: Boolean) {
         appVisible = v
         main.post { syncOverlay() }
+    }
+
+    /**
+     * Dipanggil SnoopAccessibilityService saat layanan tersambung atau terputus. Tipe jendela dan WindowManager overlay
+     * bergantung pada layanan itu (lihat OverlayHost), jadi overlay yang sedang tampil dilepas lalu digambar ulang.
+     */
+    fun a11yChanged() {
+        main.post {
+            IslandOverlay.hide(false)
+            CallOverlay.hide(false)
+            NotifOverlay.hide(false)
+            syncOverlay()
+        }
     }
 
     /** Dari Flutter: perbarui pil Island yang digambar di atas aplikasi lain (null = matikan). */
@@ -196,7 +210,7 @@ class SnoopNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
-        if (sbn != null) handleNotification(sbn)
+        if (sbn != null) handleNotification(sbn, fromPost = true)
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
@@ -358,8 +372,11 @@ class SnoopNotificationListener : NotificationListenerService() {
     private fun pendingExtra(n: Notification, key: String): PendingIntent? =
         try { n.extras?.get(key) as? PendingIntent } catch (e: Exception) { null }
 
-    private fun handleNotification(sbn: StatusBarNotification) {
-        if (sbn.packageName !in WHATSAPP) return
+    private fun handleNotification(sbn: StatusBarNotification, fromPost: Boolean = false) {
+        if (sbn.packageName !in WHATSAPP) {
+            if (fromPost) maybeShowBanner(sbn)
+            return
+        }
         val n = sbn.notification ?: return
         var answer: PendingIntent? = null
         var decline: PendingIntent? = null
@@ -382,6 +399,7 @@ class SnoopNotificationListener : NotificationListenerService() {
         val incoming = !ongoingStyle && (answer != null || (callStyle && callType == 1) || (isCall && n.fullScreenIntent != null))
         if (!incoming) {
             if (sbn.key == callKey) clearCall() // panggilan sudah dijawab / berakhir: notifikasi berubah jadi "berlangsung"
+            else if (fromPost) maybeShowBanner(sbn)
             return
         }
         val extras = n.extras
@@ -403,6 +421,54 @@ class SnoopNotificationListener : NotificationListenerService() {
                 "canOpen" to (openIntent != null),
             )
         )
+    }
+
+    /**
+     * Update 1.2.9: notifikasi penting (setara heads-up) dari aplikasi mana pun tampil sebagai banner di bawah kamera,
+     * hanya saat SNOOP tidak di layar dan tidak ada kartu panggilan. Hanya dari onNotificationPosted, supaya notifikasi
+     * lama tidak muncul serentak saat akses notifikasi baru tersambung.
+     */
+    private val lastBannerText = HashMap<String, String>()
+
+    private fun maybeShowBanner(sbn: StatusBarNotification) {
+        val ctx = applicationContext
+        if (sbn.packageName == ctx.packageName) return
+        if (IslandBridge.appVisible || IslandBridge.lastCall != null || !OverlayHost.canDraw(ctx)) return
+        val n = sbn.notification ?: return
+        val skipFlags = Notification.FLAG_ONGOING_EVENT or Notification.FLAG_GROUP_SUMMARY or Notification.FLAG_FOREGROUND_SERVICE
+        if ((n.flags and skipFlags) != 0) return
+        val skipCategories = setOf(
+            Notification.CATEGORY_CALL, Notification.CATEGORY_TRANSPORT, Notification.CATEGORY_PROGRESS,
+            Notification.CATEGORY_SERVICE, Notification.CATEGORY_SYSTEM, Notification.CATEGORY_ALARM,
+            Notification.CATEGORY_STATUS,
+        )
+        if (n.category in skipCategories) return
+        val rank = NotificationListenerService.Ranking()
+        val ranked = try { currentRanking.getRanking(sbn.key, rank) } catch (e: Exception) { false }
+        if (!ranked || rank.importance < NotificationManager.IMPORTANCE_HIGH) return
+
+        val extras = n.extras ?: return
+        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        val text = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: extras.getCharSequence(Notification.EXTRA_TEXT))
+            ?.toString().orEmpty()
+        if (title.isEmpty() && text.isEmpty()) return
+        // Pembaruan tanpa isi baru (mis. progres atau penghitung) tidak ditampilkan ulang.
+        val signature = "$title\u0000$text"
+        if (lastBannerText[sbn.key] == signature) return
+        if (lastBannerText.size > 64) lastBannerText.clear()
+        lastBannerText[sbn.key] = signature
+
+        val appName = try {
+            val pm = ctx.packageManager
+            pm.getApplicationLabel(pm.getApplicationInfo(sbn.packageName, 0)).toString()
+        } catch (e: Exception) { sbn.packageName }
+        val icon = try { (n.getLargeIcon() ?: n.smallIcon)?.loadDrawable(ctx) } catch (e: Exception) { null }
+        val open = n.contentIntent
+        main.post {
+            if (!IslandBridge.appVisible && IslandBridge.lastCall == null) {
+                NotifOverlay.show(ctx, appName, title, text, icon, open)
+            }
+        }
     }
 
     private fun clearCall() {

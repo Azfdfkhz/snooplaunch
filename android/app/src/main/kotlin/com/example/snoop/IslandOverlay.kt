@@ -193,7 +193,7 @@ object IslandOverlay {
             if (pomo) timeView = tv
         }
 
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
+        val type = OverlayHost.type()
         val lp = WindowManager.LayoutParams(
             px(widthDp), px(heightDp), type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -214,7 +214,7 @@ object IslandOverlay {
             lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
 
-        val manager = app.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val manager = OverlayHost.windowManager(app)
         // Bar ditambahkan lebih dulu supaya pil Island tergambar di atasnya.
         if (bool("bar")) showBar(app, manager)
         try {
@@ -311,7 +311,7 @@ object IslandOverlay {
         if (left.childCount > 0) box.addView(left, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, rowH, Gravity.TOP or Gravity.START).apply { leftMargin = dp(app, 16.0); topMargin = topPx })
         if (right.childCount > 0) box.addView(right, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, rowH, Gravity.TOP or Gravity.END).apply { rightMargin = dp(app, 16.0); topMargin = topPx })
 
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
+        val type = OverlayHost.type()
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT, dp(app, barHdp), type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or

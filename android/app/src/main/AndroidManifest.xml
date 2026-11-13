@@ -78,6 +78,21 @@
             </intent-filter>
         </service>
 
+        <!-- Update 1.2.9: layanan Aksesibilitas kosong, hanya agar overlay bisa memakai TYPE_ACCESSIBILITY_OVERLAY (di atas status bar).
+             Tidak membaca layar (canRetrieveWindowContent=false). Aktif hanya bila pengguna menyalakannya di pengaturan Android. -->
+        <service
+            android:name=".SnoopAccessibilityService"
+            android:exported="true"
+            android:label="@string/a11y_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/snoop_accessibility" />
+        </service>
+
         <!-- Connect to Desktop: capture layar + encoder H.264. Tidak diekspor; hanya dijalankan setelah izin sistem. -->
         <service
             android:name=".MirrorService"
