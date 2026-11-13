@@ -64,3 +64,7 @@ Bulatan Island lebih kecil + penyetel ukuran, lirik diambil lebih awal (paralel 
 - Redesain UI absensi lebih minimalis (dark glassmorphism): CheckInScreen, AttendancePreviewScreen, AttendanceDoneScreen, dan widget foto di HomeScreen (_memoriesWidget).
 - Lihat `UPDATE_1_2_4_REPORT.md`.
 
+## Update 1.3.2 — Personal Visual Launcher (BELUM dikompilasi)
+Home didesain ulang menjadi komposisi Shape di atas latar titik halus. Absensi menjadi Absensi Shape yang membuka popup
+(otomatis sekali per fase per hari). Edge Shape di tepi kanan mengembang menjadi panel App Drawer (memakai ulang
+AppDrawerScreen). Rincian, file, keputusan, dan keterbatasan: lihat `UPDATE_1_3_2_REPORT.md`.

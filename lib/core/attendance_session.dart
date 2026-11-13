@@ -51,6 +51,10 @@ class AttendanceSession {
 
   /// Absen pulang (bukan masuk) yang ditawarkan.
   bool get isExit => phase == SessionPhase.exitOpen;
+
+  /// Update 1.3.2: popup absensi boleh muncul otomatis hanya pada jendela absen yang berlaku (masuk atau pulang).
+  /// Fase `missed` (terlewat) sengaja tidak memunculkan popup; pencatatan tetap bisa lewat Absensi Shape.
+  bool get allowsAutoPopup => phase == SessionPhase.entryOpen || phase == SessionPhase.exitOpen;
 }
 
 DateTime _atMin(DateTime now, int min) => DateTime(now.year, now.month, now.day, min ~/ 60, min % 60);

@@ -26,7 +26,9 @@ class AppDrawerScreen extends StatefulWidget {
   final VoidCallback? onClose;
   /// True ketika halaman ini sedang terlihat; dipakai untuk menyegarkan daftar aplikasi.
   final bool active;
-  const AppDrawerScreen({super.key, this.onClose, this.active = true});
+  /// Update 1.3.2: dipanggil setelah pengguna mengetuk aplikasi (panel Edge Shape menutup dirinya).
+  final VoidCallback? onLaunched;
+  const AppDrawerScreen({super.key, this.onClose, this.active = true, this.onLaunched});
   @override
   State<AppDrawerScreen> createState() => _AppDrawerScreenState();
 }
@@ -107,7 +109,14 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
     SliverGrid grid(List<AppEntry> list) => SliverGrid(
           gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 92, mainAxisExtent: tileExtent, mainAxisSpacing: S.x2, crossAxisSpacing: S.x1),
           delegate: SliverChildBuilderDelegate(
-            (ctx, i) => AppTile(app: list[i], onTap: () => launchApp(ctx, list[i]), onLongPress: () => showAppActions(ctx, list[i])),
+            (ctx, i) => AppTile(
+              app: list[i],
+              onTap: () {
+                launchApp(ctx, list[i]);
+                widget.onLaunched?.call();
+              },
+              onLongPress: () => showAppActions(ctx, list[i]),
+            ),
             childCount: list.length,
           ),
         );
