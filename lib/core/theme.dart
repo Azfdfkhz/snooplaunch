@@ -49,6 +49,46 @@ class C {
   static Color get red => error;
 }
 
+/// Update 1.5.0 — design tokens "Retro Industrial" untuk Home Dashboard (PRD 3.1).
+/// Semua warna Home diambil dari sini, jadi tema dapat diperbarui di satu tempat. Latar, teks, dan panel
+/// sadar-tema (mengikuti [C.dark]); warna aksi (merah, oranye) tetap sama di tema terang maupun gelap.
+class DS {
+  static bool get dark => C.dark;
+
+  /// Warm Cream: latar utama.
+  static Color get cream => dark ? const Color(0xFF1B1A17) : const Color(0xFFFFF8F1);
+  /// Soft Cyan: panel absensi yang dapat mengembang.
+  static Color get cyan => dark ? const Color(0xFF2B474C) : const Color(0xFFD3EFF1);
+  /// Dark Teal: panel navigasi/statistik dan bingkai lingkaran.
+  static const teal = Color(0xFF405D66);
+  /// Teal lebih terang untuk bingkai lingkaran kedua dan jalur progres.
+  static const tealLight = Color(0xFF447F94);
+  static const tealProgress = Color(0xFF45BFC0);
+  /// Attendance Red: Attendance Shape dan lapisan panel statistik.
+  static const red = Color(0xFFB52D15);
+  static const redDeep = Color(0xFF8C200E);
+  /// Action Orange: Bottom Dock.
+  static const orange = Color(0xFFF04427);
+  /// Orange terang untuk panel Berikutnya (satu keluarga dengan Action Orange).
+  static const panelOrange = Color(0xFFFF8358);
+  /// Amber untuk sapaan nama pengguna pada profile pill.
+  static const amber = Color(0xFFF2A23A);
+  /// Charcoal: teks dan ikon pada latar terang.
+  static const charcoal = Color(0xFF242724);
+  /// Warm Beige: elemen dekoratif (avatar, tombol cari, placeholder foto).
+  static const beige = Color(0xFFE9E1C9);
+  /// Teks dan ikon di atas latar krem (terang: charcoal, gelap: krem).
+  static Color get ink => dark ? const Color(0xFFF1EADF) : charcoal;
+  static Color get inkSoft => dark ? const Color(0xFFB9B3A8) : const Color(0xFF5A5D58);
+  /// Permukaan gelap untuk profile pill (di tema gelap sedikit lebih terang agar tetap terlihat di atas latar).
+  static Color get pill => dark ? const Color(0xFF34372F) : charcoal;
+  /// Teks di atas permukaan [pill] dan [teal].
+  static const onDark = Color(0xFFFFF8F1);
+  /// Jalur timeline yang belum terisi.
+  static Color get track => dark ? const Color(0xFF3A3935) : const Color(0xFFE4E4E2);
+  static Color get shadow => const Color(0x33000000);
+}
+
 /// Palet kertas untuk fitur bagikan bukti absensi: gradien abu hangat, teks charcoal.
 /// Dipakai gambar bukti (EvidenceService) dan layar Absensi Tercatat agar tampilannya sama.
 class M {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/memory_photo.dart';
+import '../core/pixel_font.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
 import '../core/glass.dart';
@@ -25,9 +26,114 @@ class MemoriesScreen extends StatefulWidget {
   State<MemoriesScreen> createState() => _MemoriesScreenState();
 }
 
+/// Update 1.5.1: Memories memakai bahasa visual Beranda 1.5.0 (krem, teks piksel, pil oranye, kartu membulat).
+/// Daftar bisa ditarik ke bawah untuk memuat ulang dari cloud, dan dimuat otomatis saat halaman dibuka.
 class _MemoriesScreenState extends State<MemoriesScreen> {
   String _f = 'Semua';
+  bool _refreshing = false;
+  bool _requested = false;
   static const _filters = ['Semua', 'Hari Ini', 'Minggu Ini', 'Kegiatan'];
+
+  Future<void> _refresh() async {
+    if (_refreshing) return;
+    final s = AppScope.of(context);
+    setState(() => _refreshing = true);
+    try {
+      await s.pullMemoriesFromServer();
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_requested) return;
+    _requested = true;
+    // Muat dari cloud sekali saat halaman pertama dibuka (senyap bila belum masuk / offline).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && AppScope.of(context).signedIn) _refresh();
+    });
+  }
+
+  Widget _pill(String label, bool on, VoidCallback onTap) => Semantics(
+        button: true,
+        selected: on,
+        label: label,
+        excludeSemantics: true,
+        child: GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 44),
+            child: Container(
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              decoration: BoxDecoration(
+                color: on ? DS.orange : DS.beige,
+                borderRadius: BorderRadius.circular(999),
+                boxShadow: on ? [BoxShadow(color: DS.shadow, blurRadius: 8, offset: const Offset(0, 3))] : null,
+              ),
+              child: Text(label, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: on ? DS.onDark : DS.charcoal)),
+            ),
+          ),
+        ),
+      );
+
+  Widget _card(BuildContext context, Memory m) {
+    final st = photoStatusOf(m);
+    return Semantics(
+      button: true,
+      label: '${m.title}, ${m.meta}, ${st.text}',
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => MemoryDetailScreen(id: m.id))),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: DS.dark ? const Color(0xFF2A2925) : Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [BoxShadow(color: DS.shadow, blurRadius: 12, offset: const Offset(0, 5))],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Expanded(
+                child: Stack(fit: StackFit.expand, children: [
+                  MemoryPhoto(memory: m, thumb: true, cacheWidth: 400, compact: true, placeholderColor: DS.beige),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(color: st.bg, shape: BoxShape.circle),
+                      child: Icon(st.icon, size: 14, color: st.fg),
+                    ),
+                  ),
+                ]),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  Text(m.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: DS.ink)),
+                  const SizedBox(height: 2),
+                  Text(m.meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: DS.inkSoft)),
+                  if (m.placeName != null && m.placeName!.trim().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Row(children: [
+                        Icon(Icons.place_outlined, size: 12, color: DS.inkSoft),
+                        const SizedBox(width: 3),
+                        Expanded(child: Text(m.placeName!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: DS.inkSoft))),
+                      ]),
+                    ),
+                ]),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,47 +141,78 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day);
     final startOfWeek = startOfDay.subtract(Duration(days: now.weekday - 1));
-    final list = s.memories.where((m) => switch (_f) {
+    final all = [...s.memories]..sort((a, b) => b.capturedAt.compareTo(a.capturedAt));
+    final list = all.where((m) => switch (_f) {
           'Hari Ini' => !m.capturedAt.isBefore(startOfDay),
           'Minggu Ini' => !m.capturedAt.isBefore(startOfWeek),
           'Kegiatan' => m.scheduleId != null,
           _ => true,
         }).toList();
     final legacy = s.photosPendingUpload.length;
-    return Column(children: [
-      const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 8), child: PageTitle('Memories', icon: Icons.photo_library_outlined)),
-      FilterChipRow<String>(options: _filters, selected: _f, labelOf: (f) => f, onSelected: (f) => setState(() => _f = f)),
-      if (legacy > 0)
+
+    Widget empty() => ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
+          const SizedBox(height: 72),
+          Icon(Icons.photo_library_outlined, size: 56, color: DS.inkSoft),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              all.isEmpty
+                  ? (s.signedIn ? 'Belum ada dokumentasi.\nLakukan absensi untuk membuat memori pertama.' : 'Belum ada dokumentasi.\nMasuk ke akun cloud di Pengaturan agar dokumentasi lama dimuat kembali.')
+                  : 'Tidak ada dokumentasi untuk filter ini.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, height: 1.4, color: DS.inkSoft),
+            ),
+          ),
+        ]);
+
+    return ColoredBox(
+      color: DS.cream,
+      child: Column(children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: StatusChip('$legacy foto lama belum dipindahkan ke Drive', bg: C.warningSoft, fg: C.warning, icon: Icons.cloud_off_outlined),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+          child: Row(children: [
+            Expanded(child: PixelText('Memories', unit: 3.4, color: DS.ink)),
+            if (_refreshing)
+              const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: C.accent))
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: DS.beige, borderRadius: BorderRadius.circular(999)),
+                child: Text('${all.length} foto', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: DS.charcoal)),
+              ),
+          ]),
         ),
-      Expanded(child: list.isEmpty
-          ? const EmptyState('Belum ada dokumentasi.\nLakukan absensi untuk membuat memori pertama.')
-          : GridView.builder(
-              padding: const EdgeInsets.all(16),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 18, crossAxisSpacing: 14, childAspectRatio: .78),
-              itemCount: list.length,
-              itemBuilder: (_, i) {
-                final m = list[i];
-                final st = photoStatusOf(m);
-                return PolaroidCard(
-                  photo: MemoryPhoto(memory: m, thumb: true, cacheWidth: 400, compact: true),
-                  badge: Semantics(
-                    label: st.text,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(color: st.bg, shape: BoxShape.circle),
-                      child: Icon(st.icon, size: 14, color: st.fg),
-                    ),
+        SizedBox(
+          height: 56,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
+            children: [for (final f in _filters) Padding(padding: const EdgeInsets.only(right: 8), child: _pill(f, _f == f, () => setState(() => _f = f)))],
+          ),
+        ),
+        if (legacy > 0)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 2, 20, 4),
+            child: Align(alignment: Alignment.centerLeft, child: StatusChip('$legacy foto lama belum dipindahkan ke Drive', bg: C.warningSoft, fg: C.warning, icon: Icons.cloud_off_outlined)),
+          ),
+        Expanded(
+          child: RefreshIndicator(
+            color: C.accent,
+            onRefresh: _refresh,
+            child: list.isEmpty
+                ? empty()
+                : GridView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 16, crossAxisSpacing: 14, childAspectRatio: .78),
+                    itemCount: list.length,
+                    itemBuilder: (ctx, i) => _card(ctx, list[i]),
                   ),
-                  title: m.title, meta: m.meta, place: m.placeName,
-                  angle: [-2.0, 1.5, 2.0, -1.5][i % 4], photoHeight: 120,
-                  onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => MemoryDetailScreen(id: m.id))),
-                );
-              },
-            )),
-    ]);
+          ),
+        ),
+      ]),
+    );
   }
 }
 

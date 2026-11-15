@@ -7,6 +7,44 @@ Attendance _a(DateTime d) => Attendance(
     id: d.toIso8601String(), day: dayKey(d), checkInAt: d, status: AttendanceStatus.present);
 
 void main() {
+  test('1.5.1: Sabtu/Minggu tidak memuat jadwal Absen Masuk/Pulang bawaan, hari kerja tetap', () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = AppState();
+    await s.load();
+    final sat = DateTime(2026, 11, 14), sun = DateTime(2026, 11, 15), mon = DateTime(2026, 11, 16);
+    expect(s.itemsOn(sat).where((e) => e.title == 'Absen Masuk' || e.title == 'Absen Pulang'), isEmpty);
+    expect(s.itemsOn(sun).where((e) => e.title == 'Absen Masuk' || e.title == 'Absen Pulang'), isEmpty);
+    expect(s.itemsOn(mon).where((e) => e.title == 'Absen Masuk'), isNotEmpty);
+  });
+
+  test('1.5.1: profil yang diisi tersimpan dan tetap ada setelah dimuat ulang (tidak kembali ke placeholder)', () async {
+    SharedPreferences.setMockInitialValues({});
+    final a = AppState();
+    await a.load();
+    expect(a.profileSet, isFalse); // masih placeholder
+    a.updateProfile(fullName: 'Khazi Mahendra', school: 'SMKN 1', company: 'PT Contoh', period: '1 Jul – 31 Des 2026');
+    await a.flush();
+    final b = AppState();
+    await b.load();
+    expect(b.profileSet, isTrue);
+    expect(b.fullName, 'Khazi Mahendra');
+    expect(b.name, 'Khazi');
+    expect(b.company, 'PT Contoh');
+    expect(b.period, '1 Jul – 31 Des 2026');
+  });
+
+  test('1.5.1: memori yang dihapus di perangkat tetap tersimpan sebagai terhapus setelah dimuat ulang', () async {
+    SharedPreferences.setMockInitialValues({});
+    final a = AppState();
+    await a.load();
+    a.addMemory(Memory(id: 'm1', title: 'Uji', capturedAt: DateTime(2026, 11, 12, 9)));
+    a.deleteMemory('m1');
+    await a.flush();
+    final b = AppState();
+    await b.load();
+    expect(b.memories, isEmpty);
+  });
+
   test('streak menghitung hari kerja beruntun dan melewati akhir pekan', () {
     final s = AppState();
     final now = DateTime.now();

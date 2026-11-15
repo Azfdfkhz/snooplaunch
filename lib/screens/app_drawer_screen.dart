@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import '../core/braun.dart';
 import '../core/launcher_widgets.dart';
@@ -21,6 +23,66 @@ String categoryOf(AppEntry a) {
   return 'Lainnya';
 }
 
+/// Update 1.5.1: App Drawer tampil sebagai popup (bukan halaman geser). Dibuka dari tombol App Drawer di dock;
+/// ditutup lewat tombol X, ketuk area gelap, tombol kembali, atau setelah sebuah aplikasi dibuka.
+Future<void> showAppDrawerPopup(BuildContext context) {
+  final reduce = MediaQuery.disableAnimationsOf(context);
+  LauncherService.apps(); // pastikan daftar tersedia (cache dipakai bila segar)
+  return showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Tutup daftar aplikasi',
+    barrierColor: const Color(0x66000000),
+    transitionDuration: reduce ? Duration.zero : const Duration(milliseconds: 300),
+    pageBuilder: (ctx, _, __) {
+      final mq = MediaQuery.of(ctx);
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(S.x4, S.x4, S.x4, S.x4),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: 520, maxHeight: mq.size.height * .82),
+              child: Material(
+                type: MaterialType.transparency,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(32),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: C.night.withValues(alpha: .93),
+                        borderRadius: BorderRadius.circular(32),
+                        border: Border.all(color: Colors.white.withValues(alpha: .22)),
+                      ),
+                      // Popup bukan layar penuh: inset status bar dinolkan agar SafeArea di dalam drawer tidak menambah ruang kosong.
+                      child: MediaQuery(
+                        data: mq.copyWith(padding: EdgeInsets.zero, viewPadding: EdgeInsets.zero),
+                        child: AppDrawerScreen(
+                          popup: true,
+                          active: true,
+                          onClose: () => Navigator.of(ctx).maybePop(),
+                          onLaunched: () => Navigator.of(ctx).maybePop(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+    transitionBuilder: (ctx, anim, _, child) {
+      final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
+      return FadeTransition(
+        opacity: curved,
+        child: ScaleTransition(alignment: Alignment.bottomRight, scale: Tween<double>(begin: .86, end: 1).animate(curved), child: child),
+      );
+    },
+  );
+}
+
 class AppDrawerScreen extends StatefulWidget {
   /// Dipanggil saat pengguna menekan tombol kembali ke Home (mode tertanam di PageView).
   final VoidCallback? onClose;
@@ -28,7 +90,9 @@ class AppDrawerScreen extends StatefulWidget {
   final bool active;
   /// Update 1.3.2: dipanggil setelah pengguna mengetuk aplikasi (panel Edge Shape menutup dirinya).
   final VoidCallback? onLaunched;
-  const AppDrawerScreen({super.key, this.onClose, this.active = true, this.onLaunched});
+  /// Update 1.5.1: tampil di dalam popup (latar transparan, tombol tutup berupa X).
+  final bool popup;
+  const AppDrawerScreen({super.key, this.onClose, this.active = true, this.onLaunched, this.popup = false});
   @override
   State<AppDrawerScreen> createState() => _AppDrawerScreenState();
 }
@@ -170,7 +234,7 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
     }
 
     return Scaffold(
-      backgroundColor: C.night,
+      backgroundColor: widget.popup ? Colors.transparent : C.night,
       body: SafeArea(
         bottom: false,
         child: CustomScrollView(keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag, slivers: [
@@ -180,10 +244,10 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
               child: Row(children: [
                 Expanded(child: Text('Aplikasi', style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: C.onNight))),
                 IconButton(
-                  tooltip: 'Kembali ke beranda',
+                  tooltip: widget.popup ? 'Tutup' : 'Kembali ke beranda',
                   onPressed: widget.onClose ?? () => Navigator.of(context).maybePop(),
                   style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
-                  icon: Icon(Icons.chevron_right_rounded, color: C.onNight, size: 28),
+                  icon: Icon(widget.popup ? Icons.close_rounded : Icons.chevron_right_rounded, color: C.onNight, size: 28),
                 ),
               ]),
             ),

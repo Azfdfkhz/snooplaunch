@@ -13,8 +13,10 @@ import 'schedule_screen.dart';
 import 'settings_screen.dart';
 
 /// Root launcher: satu rangkaian halaman horizontal, digeser kiri/kanan (gaya iOS):
-///   0 App Drawer | 1 Beranda | 2 Jadwal | 3 Memories | 4 Pengingat | 5 Pengaturan
+///   1 Beranda | 2 Jadwal | 3 Memories | 4 Pengingat | 5 Pengaturan
 /// Geser ke kiri dari Beranda membuka Jadwal, dan seterusnya. Navbar kapsul hanya tampil di halaman 2–5.
+/// Update 1.5.1: App Drawer BUKAN lagi halaman geser; ia muncul sebagai popup dari tombol App Drawer di dock ([showAppDrawerPopup]).
+/// Nomor halaman logis (1..5) dipertahankan agar `onGoTo(n)` di Home tidak berubah; indeks PageView = nomor logis - 1.
 /// Tombol kembali: halaman lain -> Beranda; di Beranda tidak keluar (launcher tidak boleh tertutup).
 class Shell extends StatefulWidget {
   const Shell({super.key});
@@ -23,10 +25,9 @@ class Shell extends StatefulWidget {
 }
 
 class _ShellState extends State<Shell> with WidgetsBindingObserver {
-  static const _drawerPage = 0;
   static const _homePage = 1;
   static const _lastPage = 5;
-  final _pages = PageController(initialPage: _homePage);
+  final _pages = PageController(initialPage: _homePage - 1);
   int _page = _homePage;
   // Halaman dibangun saat pertama dikunjungi (hemat memori/CPU saat start).
   final Set<int> _visited = {_homePage};
@@ -71,13 +72,20 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
 
   void _goTo(int page) {
     if (!_pages.hasClients) return;
-    final target = page < _drawerPage ? _drawerPage : (page > _lastPage ? _lastPage : page);
+    final target = page < _homePage ? _homePage : (page > _lastPage ? _lastPage : page);
     setState(() => _visited.add(target));
     if (MediaQuery.disableAnimationsOf(context)) {
-      _pages.jumpToPage(target);
+      _pages.jumpToPage(target - 1);
     } else {
-      _pages.animateToPage(target, duration: const Duration(milliseconds: 380), curve: Curves.easeInOutCubic);
+      _pages.animateToPage(target - 1, duration: const Duration(milliseconds: 380), curve: Curves.easeInOutCubic);
     }
+  }
+
+  /// Update 1.5.1: App Drawer sebagai popup di atas Home (tanpa geser ke samping).
+  void _openDrawer() {
+    if (!mounted) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    showAppDrawerPopup(context);
   }
 
   void _goHome() {
@@ -88,12 +96,11 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
   }
 
   SystemUiOverlayStyle get _overlay {
-    final night = _page <= _homePage; // Drawer & Beranda memakai latar gelap
     return SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: C.dark ? Brightness.light : Brightness.dark, // latar Braun terang/gelap di semua halaman
       statusBarBrightness: C.dark ? Brightness.dark : Brightness.light,
-      systemNavigationBarColor: night ? C.night : C.bg,
+      systemNavigationBarColor: _page == _homePage ? DS.cream : C.bg, // Beranda (1.5.0) berlatar krem
       systemNavigationBarIconBrightness: C.dark ? Brightness.light : Brightness.dark,
       systemNavigationBarDividerColor: Colors.transparent,
     );
@@ -116,17 +123,16 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
           if (_page != _homePage) _goTo(_homePage);
         },
         child: Scaffold(
-          backgroundColor: _page <= _homePage ? C.night : C.bg,
+          backgroundColor: _page == _homePage ? DS.cream : C.bg,
           body: PageView(
             controller: _pages,
             physics: const PageScrollPhysics(parent: BouncingScrollPhysics()),
             onPageChanged: (i) => setState(() {
-              _page = i;
-              _visited.add(i);
+              _page = i + 1;
+              _visited.add(i + 1);
             }),
             children: [
-              AppDrawerScreen(active: _page == _drawerPage, onClose: () => _goTo(_homePage)),
-              HomeScreen(onGoTo: _goTo, onOpenDrawer: () => _goTo(_drawerPage)),
+              HomeScreen(onGoTo: _goTo, onOpenDrawer: _openDrawer),
               _tab(2, const ScheduleScreen()),
               _tab(3, const MemoriesScreen()),
               _tab(4, const RemindersView()),

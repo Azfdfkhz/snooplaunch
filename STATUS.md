@@ -1,3 +1,5 @@
+> Update 1.5.1: App Drawer popup, profil tersimpan di cloud, Memories (data + UI), Sabtu/Minggu libur. Lihat UPDATE_1_5_1_REPORT.md.
+
 > Update 1.2.8 (di atas Braun v2): kamera belakang tanpa mirror, tema gelap Braun, status bar kustom, logo dari SVG, mode Sekolah + QR absen. Lihat UPDATE_1_2_8_REPORT.md.
 
 # Status pengerjaan SNOOP
@@ -68,3 +70,7 @@ Bulatan Island lebih kecil + penyetel ukuran, lirik diambil lebih awal (paralel 
 Home didesain ulang menjadi komposisi Shape di atas latar titik halus. Absensi menjadi Absensi Shape yang membuka popup
 (otomatis sekali per fase per hari). Edge Shape di tepi kanan mengembang menjadi panel App Drawer (memakai ulang
 AppDrawerScreen). Rincian, file, keputusan, dan keterbatasan: lihat `UPDATE_1_3_2_REPORT.md`.
+
+
+## Update 1.5.0 — Retro Industrial Interactive Dashboard (BELUM dikompilasi)
+Home didesain ulang mengikuti PRD v1.2 dan dua gambar referensi: header tanggal piksel, panel absensi cyan yang dapat mengembang + timeline, profile pill, panel Berikutnya, Attendance Shape merah, Memories Orbit, countdown seven-segment, panel statistik, dan Bottom Launcher Dock. Font piksel dan seven-segment digambar sendiri (tanpa aset). Komponen di `lib/features/home/`, token di `DS` (`lib/core/theme.dart`). Logika absensi, backend, native Android, dan Dynamic Island tidak diubah. Rincian, keputusan, dan checklist uji: lihat `UPDATE_1_5_0_REPORT.md`.

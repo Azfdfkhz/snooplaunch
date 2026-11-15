@@ -35,6 +35,10 @@ enum SessionPhase {
 
   /// Tidak ada catatan sampai lewat jam pulang. Aksi pencatatan tetap tersedia, hanya penyajiannya redup.
   missed,
+
+  /// Update 1.5.1: Sabtu dan Minggu adalah hari libur, tidak ada absen masuk/pulang dan tidak ada status "terlewat".
+  /// Hanya berlaku bila belum ada catatan hari itu; catatan yang sudah ada tetap ditampilkan seperti biasa.
+  holiday,
 }
 
 class AttendanceSession {
@@ -56,6 +60,9 @@ class AttendanceSession {
   /// Fase `missed` (terlewat) sengaja tidak memunculkan popup; pencatatan tetap bisa lewat Absensi Shape.
   bool get allowsAutoPopup => phase == SessionPhase.entryOpen || phase == SessionPhase.exitOpen;
 }
+
+/// Sabtu atau Minggu.
+bool isWeekend(DateTime d) => d.weekday == DateTime.saturday || d.weekday == DateTime.sunday;
 
 DateTime _atMin(DateTime now, int min) => DateTime(now.year, now.month, now.day, min ~/ 60, min % 60);
 DateTime _nextMidnight(DateTime now) => DateTime(now.year, now.month, now.day + 1);
@@ -79,6 +86,7 @@ AttendanceSession resolveAttendanceSession({
           ? AttendanceSession(SessionPhase.working, end)
           : AttendanceSession(SessionPhase.exitOpen, midnight);
     case TodayRecord.none:
+      if (isWeekend(now)) return AttendanceSession(SessionPhase.holiday, midnight);
       if (nowMin < kEntryOpenMin) return AttendanceSession(SessionPhase.beforeEntry, _atMin(now, kEntryOpenMin));
       if (nowMin < workEndMin) return AttendanceSession(SessionPhase.entryOpen, end);
       return AttendanceSession(SessionPhase.missed, midnight);

@@ -24,6 +24,38 @@ void main() {
     });
   });
 
+  group('akhir pekan (1.5.1)', () {
+    // 14 Nov 2026 = Sabtu, 15 Nov 2026 = Minggu.
+    test('Sabtu dan Minggu tanpa catatan = libur, bukan absen masuk atau terlewat', () {
+      for (final day in [14, 15]) {
+        for (final t in [(0, 0), (6, 0), (9, 0), (17, 0), (23, 59)]) {
+          expect(phase(at(t.$1, t.$2, day: day), TodayRecord.none, end: weekendEnd), SessionPhase.holiday, reason: 'hari $day jam ${t.$1}:${t.$2}');
+        }
+      }
+    });
+    test('libur tidak menawarkan aksi absen dan tidak memunculkan popup otomatis', () {
+      final s = resolveAttendanceSession(now: at(9, 0, day: 14), record: TodayRecord.none, workEndMin: weekendEnd);
+      expect(s.offersAction, isFalse);
+      expect(s.allowsAutoPopup, isFalse);
+    });
+    test('libur berakhir tengah malam (menuju Senin)', () {
+      final s = resolveAttendanceSession(now: at(9, 0, day: 15), record: TodayRecord.none, workEndMin: weekendEnd);
+      expect(s.nextChange, DateTime(2026, 11, 16));
+      expect(phase(at(9, 0, day: 16), TodayRecord.none), SessionPhase.entryOpen); // Senin kembali normal
+    });
+    test('catatan yang sudah ada di akhir pekan tetap ditampilkan', () {
+      expect(phase(at(9, 0, day: 14), TodayRecord.leave, end: weekendEnd), SessionPhase.leave);
+      expect(phase(at(9, 0, day: 14), TodayRecord.checkedIn, end: weekendEnd), SessionPhase.working);
+      expect(phase(at(18, 0, day: 14), TodayRecord.checkedOut, end: weekendEnd), SessionPhase.done);
+    });
+    test('isWeekend', () {
+      expect(isWeekend(DateTime(2026, 11, 13)), isFalse); // Jumat
+      expect(isWeekend(DateTime(2026, 11, 14)), isTrue);
+      expect(isWeekend(DateTime(2026, 11, 15)), isTrue);
+      expect(isWeekend(DateTime(2026, 11, 16)), isFalse);
+    });
+  });
+
   group('sudah absen masuk', () {
     test('bekerja sampai jam pulang', () {
       expect(phase(at(8, 0), TodayRecord.checkedIn), SessionPhase.working);

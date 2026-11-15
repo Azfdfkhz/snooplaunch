@@ -28,6 +28,13 @@ class AppState extends ChangeNotifier {
   String school = 'SMK Negeri 1 Bandung';
   String company = 'PT. Solusi Digital Indonesia';
   String period = '1 Jul 2025 – 31 Des 2025';
+  /// Update 1.5.1: true setelah pengguna mengisi profil (atau profil cloud dimuat). Selama false, nilai di atas hanyalah placeholder
+  /// dan profil dari cloud boleh menimpanya.
+  bool profileSet = false;
+  /// Perubahan profil lokal yang belum terkirim ke cloud (offline / belum masuk). Dikirim saat masuk/online.
+  bool _profileDirty = false;
+  /// Dokumentasi yang dihapus pengguna di perangkat ini; tidak dimunculkan kembali oleh sinkronisasi cloud.
+  final Set<String> _deletedMemoryIds = {};
   int workStartMin = 8 * 60;
   int workEndMin = 17 * 60; // Senin–Jumat
   int weekendEndMin = 16 * 60; // Sabtu & Minggu (asumsi: tetap 16:00, dapat diubah di Pengaturan)
@@ -78,6 +85,10 @@ class AppState extends ChangeNotifier {
     school = _p!.getString('profile_school') ?? school;
     company = _p!.getString('profile_company') ?? company;
     period = _p!.getString('profile_period') ?? period;
+    // Data lama (sebelum 1.5.1) tidak punya flag: anggap profil sudah diisi bila berbeda dari placeholder bawaan.
+    profileSet = _p!.getBool('profile_set') ?? (fullName != 'Raka Pratama' && fullName.trim().isNotEmpty);
+    _profileDirty = _p!.getBool('profile_dirty') ?? false;
+    _deletedMemoryIds.addAll(_p!.getStringList('deleted_memories') ?? const []);
     workStartMin = _p!.getInt('work_start') ?? workStartMin;
     workEndMin = _p!.getInt('work_end') ?? workEndMin;
     weekendEndMin = _p!.getInt('weekend_end') ?? weekendEndMin;
@@ -152,6 +163,8 @@ class AppState extends ChangeNotifier {
           notifyListeners();
           sync.retryPending();
           unawaited(pullAttendanceFromServer());
+          unawaited(syncProfile());
+          unawaited(pullMemoriesFromServer());
           unawaited(migrateLegacyPhotos());
         });
       } catch (_) {}
@@ -176,6 +189,8 @@ class AppState extends ChangeNotifier {
     }
     await sync.retryPending();
     unawaited(pullAttendanceFromServer());
+    unawaited(syncProfile());
+    unawaited(pullMemoriesFromServer());
     unawaited(migrateLegacyPhotos());
   }
 
@@ -261,6 +276,9 @@ class AppState extends ChangeNotifier {
       'profile_school': school,
       'profile_company': company,
       'profile_period': period,
+      'profile_set': profileSet,
+      'profile_dirty': _profileDirty,
+      'deleted_memories': _deletedMemoryIds.toList(),
       'work_start': workStartMin,
       'work_end': workEndMin,
       'late_tolerance': lateToleranceMin,
@@ -328,6 +346,8 @@ class AppState extends ChangeNotifier {
     notifyListeners(); // hari bisa berganti saat aplikasi di latar belakang
     await sync.retryPending();
     await pullAttendanceFromServer();
+    unawaited(syncProfile());
+    unawaited(pullMemoriesFromServer());
   }
 
   void changed() { notifyListeners(); _save(); }
@@ -338,7 +358,126 @@ class AppState extends ChangeNotifier {
     this.school = school.trim();
     this.company = company.trim();
     this.period = period.trim();
+    profileSet = true;
+    _profileDirty = true;
     changed();
+    unawaited(pushProfileToServer());
+  }
+
+  bool _syncingProfile = false;
+
+  /// Update 1.5.1: mengirim profil lokal ke cloud bila ada perubahan yang belum terkirim.
+  Future<void> pushProfileToServer() async {
+    if (!signedIn || !_profileDirty || !profileSet) return;
+    try {
+      await BackendService.instance.upsertProfile(fullName: fullName, school: school, company: company, period: period);
+      _profileDirty = false;
+      await _save();
+    } catch (_) {
+      // Tetap ditandai belum terkirim; dicoba lagi saat masuk/aplikasi dibuka/online.
+    }
+  }
+
+  /// Update 1.5.1: sinkronisasi profil dua arah. Perubahan lokal yang belum terkirim menang (dikirim ke cloud);
+  /// selain itu profil cloud dipakai, sehingga nama, sekolah, perusahaan, dan periode kembali setelah update atau pasang ulang.
+  Future<void> syncProfile() async {
+    if (!signedIn || _syncingProfile) return;
+    _syncingProfile = true;
+    try {
+      if (_profileDirty && profileSet) {
+        await pushProfileToServer();
+        return;
+      }
+      final row = await BackendService.instance.fetchProfile();
+      final cloudName = ((row?['full_name'] as String?) ?? '').trim();
+      if (row == null || cloudName.isEmpty) {
+        // Cloud belum punya profil: kirim profil lokal bila sudah diisi pengguna.
+        if (profileSet) {
+          _profileDirty = true;
+          await pushProfileToServer();
+        }
+        return;
+      }
+      fullName = cloudName;
+      name = cloudName.split(RegExp(r'\s+')).firstOrNull ?? cloudName;
+      final inst = row['institution'] as String?;
+      final comp = row['company_name'] as String?;
+      final per = row['period'] as String?;
+      if (inst != null && inst.trim().isNotEmpty) school = inst.trim();
+      if (comp != null && comp.trim().isNotEmpty) company = comp.trim();
+      if (per != null && per.trim().isNotEmpty) period = per.trim();
+      profileSet = true;
+      notifyListeners();
+      await _save();
+    } catch (_) {
+      // Offline: profil lokal tetap dipakai.
+    } finally {
+      _syncingProfile = false;
+    }
+  }
+
+  bool _pullingMemories = false;
+
+  /// Update 1.5.1: memuat dokumentasi dari cloud (metadata + referensi foto Drive) supaya Memories tetap tampil
+  /// setelah update atau pasang ulang. Data lokal tidak ditimpa; hanya status foto yang sudah terkonfirmasi di Drive diperbarui.
+  Future<void> pullMemoriesFromServer() async {
+    if (!signedIn || _pullingMemories) return;
+    _pullingMemories = true;
+    try {
+      final rows = await BackendService.instance.fetchAllMemories();
+      final byId = {for (final m in memories) m.id: m};
+      var any = false;
+      for (final row in rows) {
+        try {
+          final id = row['id'] as String;
+          if (_deletedMemoryIds.contains(id)) continue;
+          final driveId = (row['drive_file_id'] as String?)?.trim();
+          final uploaded = driveId != null && driveId.isNotEmpty;
+          final driveUrl = row['drive_file_url'] as String?;
+          final local = byId[id];
+          if (local == null) {
+            final m = Memory(
+              id: id,
+              title: ((row['title'] as String?) ?? '').trim().isEmpty ? 'Dokumentasi' : row['title'] as String,
+              scheduleId: row['schedule_id'] as String?,
+              capturedAt: DateTime.parse(row['captured_at'] as String).toLocal(),
+              lat: (row['latitude'] as num?)?.toDouble(),
+              lng: (row['longitude'] as num?)?.toDouble(),
+              accuracy: (row['location_accuracy_m'] as num?)?.toDouble(),
+              description: (row['description'] as String?) ?? '',
+              upload: uploaded ? UploadStatus.uploaded : UploadStatus.failed,
+              driveUrl: driveUrl,
+              driveFileId: uploaded ? driveId : null,
+              uploadError: uploaded ? null : 'Foto tidak ada di Drive.',
+            );
+            memories.add(m);
+            byId[id] = m;
+            any = true;
+          } else if (uploaded && !local.inCloud && local.upload != UploadStatus.uploading) {
+            local.upload = UploadStatus.uploaded;
+            local.driveFileId = driveId;
+            local.driveUrl = driveUrl ?? local.driveUrl;
+            local.uploadError = null;
+            any = true;
+          }
+        } catch (_) {} // satu baris rusak tidak boleh menggagalkan seluruh daftar
+      }
+      if (any) {
+        memories.sort((a, b) => b.capturedAt.compareTo(a.capturedAt));
+        notifyListeners();
+        await _save();
+      }
+    } catch (_) {
+      // Offline atau belum masuk: data lokal tetap dipakai.
+    } finally {
+      _pullingMemories = false;
+    }
+  }
+
+  /// Memuat ulang data akun dari cloud (profil, memories, absensi). Aman dipanggil berulang.
+  Future<void> refreshFromCloud() async {
+    await syncProfile();
+    await Future.wait([pullMemoriesFromServer(), pullAttendanceFromServer()]);
   }
 
   void setTheme(String value) { theme = value; changed(); }
@@ -510,7 +649,12 @@ class AppState extends ChangeNotifier {
   /// Kegiatan yang berlaku pada tanggal tertentu: Absen Masuk/Pulang (tetap) + kegiatan untuk tanggal itu.
   List<ScheduleItem> itemsOn(DateTime d) {
     final k = dayKey(d);
-    return schedule.where((it) => it.date == null || it.date == k).toList()
+    // Update 1.5.1: Sabtu/Minggu libur, jadwal Absen Masuk/Pulang bawaan (berulang harian) tidak ditampilkan.
+    final weekend = d.weekday >= DateTime.saturday;
+    return schedule.where((it) {
+      if (it.date == null) return !(weekend && (it.title == 'Absen Masuk' || it.title == 'Absen Pulang'));
+      return it.date == k;
+    }).toList()
       ..sort((a, b) => a.startMin.compareTo(b.startMin));
   }
 
@@ -850,6 +994,7 @@ class AppState extends ChangeNotifier {
     final matches = memories.where((m) => m.id == id).toList();
     memories.removeWhere((m) => m.id == id);
     _fresh.remove(id);
+    _deletedMemoryIds.add(id); // jangan dimunculkan lagi oleh sinkronisasi cloud
     changed();
     CloudPhotoService.instance.remove(id);
     for (final m in matches) {

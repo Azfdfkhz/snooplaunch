@@ -125,6 +125,53 @@ class BackendService {
     return (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
+  // ---------------------------------------------------------------- Profil (Update 1.5.1)
+  // Profil disimpan di tabel `profiles` supaya tidak kembali ke placeholder setelah update/pasang ulang.
+
+  /// Baris profil milik pengguna yang sedang masuk (null bila belum ada). Kolom `period` ada sejak migration_009.
+  Future<Map<String, dynamic>?> fetchProfile() async {
+    final uid = client.auth.currentUser?.id;
+    if (uid == null) return null;
+    final row = await client.from('profiles').select().eq('id', uid).maybeSingle();
+    return row == null ? null : Map<String, dynamic>.from(row as Map);
+  }
+
+  Future<void> upsertProfile({required String fullName, required String school, required String company, required String period}) async {
+    final uid = client.auth.currentUser?.id;
+    if (uid == null) throw StateError('Belum masuk.');
+    final base = <String, dynamic>{'id': uid, 'full_name': fullName, 'institution': school, 'company_name': company};
+    try {
+      await client.from('profiles').upsert({...base, 'period': period}, onConflict: 'id');
+    } on PostgrestException catch (e) {
+      // Kolom `period` belum ada (migration_009 belum dijalankan): simpan kolom lain agar nama tetap aman.
+      if (e.code == 'PGRST204' || e.code == '42703' || e.message.contains('period')) {
+        await client.from('profiles').upsert(base, onConflict: 'id');
+      } else {
+        rethrow;
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- Memories dari cloud (Update 1.5.1)
+
+  /// Seluruh dokumentasi milik pengguna (paginasi 1000 baris). RLS membatasi ke baris sendiri.
+  Future<List<Map<String, dynamic>>> fetchAllMemories() async {
+    final out = <Map<String, dynamic>>[];
+    var from = 0;
+    while (true) {
+      final rows = await client
+          .from('documentations')
+          .select('id, schedule_id, captured_at, latitude, longitude, location_accuracy_m, title, description, drive_file_id, drive_file_url, upload_status')
+          .order('captured_at', ascending: false)
+          .range(from, from + 999);
+      final list = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      out.addAll(list);
+      if (list.length < 1000) break;
+      from += 1000;
+    }
+    return out;
+  }
+
   Future<void> syncMemory(Memory m) async {
     await client.from('documentations').upsert({
       'id': m.id,

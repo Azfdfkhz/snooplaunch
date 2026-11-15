@@ -46,3 +46,8 @@ app.*.map.json
 
 # Secret server (jangan di-commit)
 supabase/secrets.env
+
+# Update 1.5.1: kunci tanda tangan jangan ikut ke repositori
+android/key.properties
+android/*.keystore
+*.jks
