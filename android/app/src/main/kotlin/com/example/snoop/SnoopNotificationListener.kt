@@ -4,8 +4,11 @@ import android.app.ActivityOptions
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.media.session.MediaController
@@ -158,7 +161,8 @@ object IslandBridge {
 /**
  * Membaca (1) lagu yang sedang diputar aplikasi lain lewat MediaSession dan (2) panggilan masuk WhatsApp lewat
  * notifikasinya. Hanya aktif setelah pengguna memberi "Akses notifikasi" kepada SNOOP di pengaturan Android.
- * Tidak ada data yang dikirim ke luar perangkat dari sini.
+ * Sejak 1.5.2, bila pengguna masuk akun cloud dan sambungan Workspace aktif, notifikasi (judul + isi) dan level baterai
+ * dikirim ke akun Supabase pengguna sendiri lewat [CloudBridge] agar tampil di SnoopDesk. Bisa dimatikan dari aplikasi.
  */
 class SnoopNotificationListener : NotificationListenerService() {
     companion object {
@@ -190,10 +194,35 @@ class SnoopNotificationListener : NotificationListenerService() {
     private var declineIntent: PendingIntent? = null
     private var openIntent: PendingIntent? = null
 
+    // Update 1.5.2: laporan baterai ke Workspace desktop selama akses notifikasi aktif (juga saat aplikasi tertutup).
+    private var batteryReceiver: BroadcastReceiver? = null
+
+    private fun startBatteryReports() {
+        if (batteryReceiver != null) return
+        val r = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                CloudBridge.pushBattery(applicationContext)
+            }
+        }
+        try {
+            registerReceiver(r, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            batteryReceiver = r
+        } catch (e: Exception) {
+            // abaikan: laporan baterai hanya saat aplikasi dibuka
+        }
+    }
+
+    private fun stopBatteryReports() {
+        val r = batteryReceiver ?: return
+        try { unregisterReceiver(r) } catch (e: Exception) { }
+        batteryReceiver = null
+    }
+
     override fun onListenerConnected() {
         super.onListenerConnected()
         instance = this
         IslandBridge.appContext = applicationContext
+        startBatteryReports()
         initMedia()
         try {
             activeNotifications?.forEach { handleNotification(it) }
@@ -205,16 +234,64 @@ class SnoopNotificationListener : NotificationListenerService() {
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         instance = null
+        stopBatteryReports()
         teardownMedia()
         clearCall()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
-        if (sbn != null) handleNotification(sbn, fromPost = true)
+        if (sbn != null) {
+            handleNotification(sbn, fromPost = true)
+            try { forwardToDesktop(sbn) } catch (e: Exception) { /* jangan sampai mengganggu Island */ }
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         if (sbn != null && sbn.key == callKey) clearCall()
+    }
+
+
+    // ------------------------------------------------------------------ Workspace desktop (Update 1.5.2)
+
+    private val lastForwarded = HashMap<String, String>()
+
+    /**
+     * Meneruskan notifikasi yang layak (setara tidak-bisu) ke SnoopDesk lewat Supabase pengguna sendiri.
+     * Dilewati: notifikasi SNOOP sendiri, berjalan terus (ongoing/foreground), ringkasan grup, media/progres/sistem,
+     * dan notifikasi dengan kepentingan rendah. Notifikasi berisi rahasia (VISIBILITY_SECRET) hanya dikirim nama aplikasinya.
+     */
+    private fun forwardToDesktop(sbn: StatusBarNotification) {
+        val ctx = applicationContext
+        if (!CloudBridge.notifsEnabled(ctx)) return
+        if (sbn.packageName == ctx.packageName) return
+        val n = sbn.notification ?: return
+        val skipFlags = Notification.FLAG_ONGOING_EVENT or Notification.FLAG_GROUP_SUMMARY or Notification.FLAG_FOREGROUND_SERVICE
+        if ((n.flags and skipFlags) != 0) return
+        val skipCategories = setOf(
+            Notification.CATEGORY_TRANSPORT, Notification.CATEGORY_PROGRESS, Notification.CATEGORY_SERVICE,
+            Notification.CATEGORY_SYSTEM, Notification.CATEGORY_STATUS,
+        )
+        if (n.category in skipCategories) return
+        val rank = NotificationListenerService.Ranking()
+        val ranked = try { currentRanking.getRanking(sbn.key, rank) } catch (e: Exception) { false }
+        if (!ranked || rank.importance < NotificationManager.IMPORTANCE_DEFAULT) return
+
+        val extras = n.extras ?: return
+        val secret = n.visibility == Notification.VISIBILITY_SECRET
+        val title = if (secret) "" else extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        val text = if (secret) "Konten disembunyikan"
+        else (extras.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: extras.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty()
+        if (title.isEmpty() && text.isEmpty()) return
+        val signature = "$title\u0000$text"
+        if (lastForwarded[sbn.key] == signature) return
+        if (lastForwarded.size > 64) lastForwarded.clear()
+        lastForwarded[sbn.key] = signature
+
+        val appName = try {
+            val pm = ctx.packageManager
+            pm.getApplicationLabel(pm.getApplicationInfo(sbn.packageName, 0)).toString()
+        } catch (e: Exception) { sbn.packageName }
+        CloudBridge.pushNotification(ctx, sbn.key, sbn.packageName, appName, title, text, sbn.postTime)
     }
 
     // ------------------------------------------------------------------ Media

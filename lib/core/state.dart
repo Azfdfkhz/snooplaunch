@@ -14,6 +14,7 @@ import '../services/cloud_photo_service.dart';
 import '../services/notification_service.dart';
 import '../services/sync_service.dart';
 import '../services/task_evidence_store.dart';
+import '../services/workspace_bridge.dart';
 
 const _uuid = Uuid();
 
@@ -157,6 +158,8 @@ class AppState extends ChangeNotifier {
     sync.onAttendanceApplied = _applyAttendance;
     sync.onStatusChanged = notifyListeners;
     try { await BackendService.instance.initialize(); } catch (_) {}
+    // Update 1.5.2: kegiatan, pengingat, dan catatan dikirim ke Workspace SnoopDesk (baterai/notifikasi lewat native).
+    WorkspaceBridge.instance.attach(_workspaceSnapshot);
     if (BackendService.instance.configured) {
       try {
         _authSub = BackendService.instance.authChanges.listen((_) {
@@ -166,6 +169,7 @@ class AppState extends ChangeNotifier {
           unawaited(syncProfile());
           unawaited(pullMemoriesFromServer());
           unawaited(migrateLegacyPhotos());
+          unawaited(WorkspaceBridge.instance.sync());
         });
       } catch (_) {}
       try {
@@ -234,6 +238,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    try { await WorkspaceBridge.instance.disconnect(); } catch (_) {} // harus sebelum keluar: butuh sesi untuk membersihkan server
     try { await BackendService.instance.signOut(); } catch (_) {}
     await CloudPhotoService.instance.clearAll(); // cache foto cloud tidak boleh tertinggal setelah keluar akun
     notifyListeners();
@@ -348,9 +353,21 @@ class AppState extends ChangeNotifier {
     await pullAttendanceFromServer();
     unawaited(syncProfile());
     unawaited(pullMemoriesFromServer());
+    unawaited(WorkspaceBridge.instance.sync());
   }
 
-  void changed() { notifyListeners(); _save(); }
+  void changed() {
+    notifyListeners();
+    _save();
+    WorkspaceBridge.instance.schedulePush();
+  }
+
+  /// Update 1.5.2: data yang dilihat desktop. Catatan mingguan: id = tanggal Senin (yyyy-mm-dd).
+  WorkspaceSnapshot _workspaceSnapshot() => (
+        schedule: [for (final e in schedule) e.toJson()],
+        reminders: [for (final e in reminders) e.toJson()],
+        notes: [for (final e in weekNotes.entries) if (e.value.trim().isNotEmpty) <String, dynamic>{'id': e.key, 'text': e.value}],
+      );
 
   void updateProfile({required String fullName, required String school, required String company, required String period}) {
     this.fullName = fullName.trim();

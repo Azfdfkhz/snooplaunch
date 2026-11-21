@@ -146,6 +146,37 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "consumeHub" -> result.success(IslandBridge.consumePendingHub())
+                // Update 1.5.2: jembatan Workspace desktop (baterai + notifikasi HP ke Supabase pengguna).
+                "bridgeConfigure" -> {
+                    val url = call.argument<String>("url").orEmpty()
+                    val key = call.argument<String>("key").orEmpty()
+                    val secret = call.argument<String>("secret").orEmpty()
+                    val notifs = call.argument<Boolean>("notifs") != false
+                    if (url.isEmpty() || key.isEmpty() || secret.length < 32) result.success(false)
+                    else {
+                        CloudBridge.configure(this, url, key, secret, notifs)
+                        result.success(true)
+                    }
+                }
+                "bridgeClear" -> {
+                    CloudBridge.clear(this)
+                    result.success(true)
+                }
+                "bridgeNotifs" -> {
+                    CloudBridge.setNotifs(this, call.argument<Boolean>("on") == true)
+                    result.success(true)
+                }
+                "bridgePushBattery" -> {
+                    CloudBridge.pushBattery(this, force = true)
+                    result.success(true)
+                }
+                "bridgeInfo" -> result.success(
+                    mapOf(
+                        "configured" to CloudBridge.configured(this),
+                        "notifs" to CloudBridge.notifsEnabled(this),
+                        "listener" to isListenerEnabled(),
+                    )
+                )
                 // Update 1.2.8: status bar kustom di dalam SNOOP butuh level baterai.
                 "battery" -> {
                     val i = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/mirror_service.dart';
+import '../services/system_bridge.dart';
+import '../services/workspace_bridge.dart';
 
 /// Connect to Desktop: sambungkan HP ke SnoopUX Desktop (Wi-Fi, hotspot, atau kabel USB) dengan kode pairing 6 digit.
 class ConnectDesktopScreen extends StatefulWidget {
@@ -68,6 +70,8 @@ class _ConnectDesktopScreenState extends State<ConnectDesktopScreen> {
           final m = MirrorService.instance;
           final busy = m.active && m.phase != MirrorPhase.streaming;
           return ListView(padding: const EdgeInsets.fromLTRB(20, 8, 20, 32), children: [
+            const _WorkspaceLinkCard(),
+            const SizedBox(height: 20),
             const Text(
               'Bagikan layar HP ke SnoopUX Desktop. Di laptop: buka Dynamic Island → Connect to Mobile → pilih jalur → Connect. '
               'Lalu isi alamat dan kode yang tampil di laptop.',
@@ -125,6 +129,84 @@ class _ConnectDesktopScreenState extends State<ConnectDesktopScreen> {
           ]);
         },
       ),
+    );
+  }
+}
+
+
+/// Update 1.5.2: status sambungan Workspace SnoopDesk (kegiatan, absensi, dokumentasi, catatan, baterai, notifikasi).
+class _WorkspaceLinkCard extends StatefulWidget {
+  const _WorkspaceLinkCard();
+  @override
+  State<_WorkspaceLinkCard> createState() => _WorkspaceLinkCardState();
+}
+
+class _WorkspaceLinkCardState extends State<_WorkspaceLinkCard> {
+  bool _listener = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WorkspaceBridge.instance.sync();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final v = await WorkspaceBridge.instance.listenerEnabled();
+    if (mounted) setState(() => _listener = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return ListenableBuilder(
+      listenable: WorkspaceBridge.instance,
+      builder: (context, _) {
+        final b = WorkspaceBridge.instance;
+        final ok = b.registered && b.lastError == null;
+        final accent = ok ? const Color(0xFF2E9F6B) : const Color(0xFFD64545);
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(color: cs.onSurface.withOpacity(0.05), borderRadius: BorderRadius.circular(16)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Icon(ok ? Icons.cloud_done_rounded : Icons.cloud_off_rounded, size: 20, color: accent),
+              const SizedBox(width: 10),
+              const Expanded(child: Text('Workspace SnoopDesk', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5))),
+            ]),
+            const SizedBox(height: 8),
+            Text(
+              !b.registered && b.lastError == null
+                  ? 'Masuk akun cloud (Pengaturan > Akun cloud) agar kegiatan, absensi, dokumentasi, catatan, baterai, dan notifikasi HP tampil di Workspace SnoopDesk.'
+                  : b.lastError ?? 'Tersambung. Kegiatan, pengingat, catatan, absensi, dan dokumentasi tampil di Workspace SnoopDesk setelah masuk dengan akun yang sama.',
+              style: const TextStyle(fontSize: 12.5, height: 1.45),
+            ),
+            const SizedBox(height: 6),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('Kirim notifikasi HP ke desktop', style: TextStyle(fontSize: 13)),
+              subtitle: const Text('Judul dan isi notifikasi dikirim ke akun cloud Anda sendiri. Notifikasi berisi rahasia hanya dikirim nama aplikasinya.', style: TextStyle(fontSize: 11.5)),
+              value: b.notifs,
+              onChanged: (v) => b.setNotifs(v),
+            ),
+            if (!_listener)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  const Text('Notifikasi & baterai di latar belakang butuh Akses notifikasi.', style: TextStyle(fontSize: 12)),
+                  TextButton(
+                    onPressed: () async {
+                      await SystemBridge.openListenerSettings();
+                    },
+                    child: const Text('Buka pengaturan'),
+                  ),
+                  TextButton(onPressed: _refresh, child: const Text('Periksa lagi')),
+                ]),
+              ),
+          ]),
+        );
+      },
     );
   }
 }

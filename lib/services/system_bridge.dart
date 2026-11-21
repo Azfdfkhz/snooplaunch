@@ -75,6 +75,44 @@ class SystemBridge {
     }
   }
 
+  // ---- Update 1.5.2: jembatan Workspace desktop (lihat CloudBridge.kt)
+
+  /// Menyimpan URL, kunci publik, dan rahasia perangkat ke native supaya baterai/notifikasi bisa dilaporkan saat aplikasi tertutup.
+  static Future<bool> bridgeConfigure({required String url, required String key, required String secret, required bool notifs}) async {
+    try {
+      return await _ch.invokeMethod<bool>('bridgeConfigure', {'url': url, 'key': key, 'secret': secret, 'notifs': notifs}) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> bridgeClear() async {
+    try {
+      await _ch.invokeMethod('bridgeClear');
+    } catch (_) {}
+  }
+
+  static Future<void> bridgeNotifs(bool on) async {
+    try {
+      await _ch.invokeMethod('bridgeNotifs', {'on': on});
+    } catch (_) {}
+  }
+
+  static Future<void> bridgePushBattery() async {
+    try {
+      await _ch.invokeMethod('bridgePushBattery');
+    } catch (_) {}
+  }
+
+  /// {configured, notifs, listener} dari native; null di luar Android.
+  static Future<Map<String, dynamic>?> bridgeInfo() async {
+    try {
+      return await _ch.invokeMapMethod<String, dynamic>('bridgeInfo');
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Update 1.2.8: kecerahan layar penuh selama QR absen ditampilkan. false = kembali ke kecerahan sistem.
   static Future<void> maxBrightness(bool on) async {
     try {
