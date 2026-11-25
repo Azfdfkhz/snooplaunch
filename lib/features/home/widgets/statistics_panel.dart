@@ -9,7 +9,9 @@ class StatisticsPanel extends StatelessWidget {
   final int streak;
   final VoidCallback onTap;
   final double scale;
-  const StatisticsPanel({super.key, required this.streak, required this.onTap, required this.scale});
+  /// 2.0: teks pembaca layar khusus (Productivity Snapshot). null = teks streak absensi PKL.
+  final String? semanticsLabel;
+  const StatisticsPanel({super.key, required this.streak, required this.onTap, required this.scale, this.semanticsLabel});
 
   static const refW = 68.0, refH = 235.0;
 
@@ -21,7 +23,7 @@ class StatisticsPanel extends StatelessWidget {
     final digits = '$streak';
     return Semantics(
       button: true,
-      label: lit ? 'Statistik: streak absensi $streak hari berturut-turut. Ketuk untuk membuka ringkasan' : 'Statistik: belum ada streak. Ketuk untuk membuka ringkasan',
+      label: semanticsLabel ?? (lit ? 'Statistik: streak absensi $streak hari berturut-turut. Ketuk untuk membuka ringkasan' : 'Statistik: belum ada streak. Ketuk untuk membuka ringkasan'),
       excludeSemantics: true,
       child: SizedBox(
         width: w,

@@ -10,6 +10,10 @@ import '../services/system_bridge.dart';
 import '../services/launcher_service.dart';
 import '../services/notification_service.dart';
 import '../core/snoop_logo.dart';
+import '../features/academic_calendar/screens/academic_calendar_screen.dart';
+import '../features/notes/screens/notes_screen.dart';
+import '../features/pkl_archive/screens/pkl_archive_screen.dart';
+import '../features/productivity/screens/productivity_screen.dart';
 import 'auth_screen.dart';
 import 'qr_screen.dart';
 import 'connect_desktop_screen.dart';
@@ -31,47 +35,32 @@ class SettingsView extends StatelessWidget {
   final bool showTitle;
   const SettingsView({super.key, this.showTitle = true});
 
+  /// Profil siswa (2.0): nama, sekolah, kelas, jurusan, tahun ajaran. Data PKL (perusahaan/periode) tidak diedit di sini;
+  /// nilainya dipertahankan dan hanya terlihat di Arsip PKL.
   Future<void> _editProfile(BuildContext context) async {
     final s = AppScope.of(context);
     final name = TextEditingController(text: s.fullName);
     final school = TextEditingController(text: s.school);
-    final company = TextEditingController(text: s.company);
-    final period = TextEditingController(text: s.period);
+    final cls = TextEditingController(text: s.className);
+    final major = TextEditingController(text: s.major);
+    final year = TextEditingController(text: s.academicYear);
     final formKey = GlobalKey<FormState>();
     final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
       title: const Text('Edit Profil'),
       content: Form(key: formKey, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
         TextFormField(controller: name, decoration: const InputDecoration(labelText: 'Nama lengkap'), validator: (v) => v == null || v.trim().isEmpty ? 'Nama wajib diisi' : null),
-        TextFormField(controller: school, decoration: const InputDecoration(labelText: 'Sekolah / institusi')),
-        TextFormField(controller: company, decoration: const InputDecoration(labelText: 'Perusahaan')),
-        TextFormField(controller: period, decoration: const InputDecoration(labelText: 'Periode PKL')),
+        TextFormField(controller: school, decoration: const InputDecoration(labelText: 'Sekolah')),
+        TextFormField(controller: cls, decoration: const InputDecoration(labelText: 'Kelas (mis. XII RPL 1)')),
+        TextFormField(controller: major, decoration: const InputDecoration(labelText: 'Jurusan')),
+        TextFormField(controller: year, decoration: const InputDecoration(labelText: 'Tahun ajaran (mis. 2026/2027)')),
       ]))),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
         FilledButton(onPressed: () { if (formKey.currentState!.validate()) Navigator.pop(ctx, true); }, child: const Text('Simpan')),
       ],
     ));
-    if (ok == true) s.updateProfile(fullName: name.text, school: school.text, company: company.text, period: period.text);
-    name.dispose(); school.dispose(); company.dispose(); period.dispose();
-  }
-
-  /// Update 1.2.8: pilih mode PKL atau Sekolah. Data PKL tidak dihapus; hanya tampilan Beranda yang berganti.
-  Future<void> _chooseMode(BuildContext context) async {
-    final s = AppScope.of(context);
-    final v = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(title: const Text('Mode aplikasi'), children: [
-        SimpleDialogOption(
-          onPressed: () => Navigator.pop(ctx, 'pkl'),
-          child: ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.work_rounded), title: const Text('PKL'), subtitle: const Text('Absensi foto, jadwal, dan dokumentasi PKL'), trailing: s.schoolMode ? null : const Icon(Icons.check_rounded)),
-        ),
-        SimpleDialogOption(
-          onPressed: () => Navigator.pop(ctx, 'sekolah'),
-          child: ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.school_rounded), title: const Text('Sekolah'), subtitle: const Text('QR absen sekolah di Beranda; jadwal dan pengingat tetap bisa dipakai'), trailing: s.schoolMode ? const Icon(Icons.check_rounded) : null),
-        ),
-      ]),
-    );
-    if (v != null) s.setMode(v);
+    if (ok == true) s.updateProfile(fullName: name.text, school: school.text, className: cls.text, major: major.text, academicYear: year.text);
+    name.dispose(); school.dispose(); cls.dispose(); major.dispose(); year.dispose();
   }
 
   /// Update 1.2.8: pilih varian logo (dari SVG yang diberikan). Ikon peluncur Android mengikuti varian A.
@@ -135,25 +124,11 @@ class SettingsView extends StatelessWidget {
     if (selected != null) s.setTheme(selected);
   }
 
-  /// Jam pulang. Senin–Jumat dan Sabtu–Minggu diatur terpisah.
-  Future<void> _pickWorkEnd(BuildContext context, {required bool weekend}) async {
-    final s = AppScope.of(context);
-    final cur = weekend ? s.weekendEndMin : s.workEndMin;
-    final t = await showTimePicker(context: context, initialTime: TimeOfDay(hour: cur ~/ 60, minute: cur % 60));
-    if (t == null) return;
-    final m = t.hour * 60 + t.minute;
-    if (weekend) {
-      s.setWorkHours(weekendEnd: m);
-    } else {
-      s.setWorkHours(weekdayEnd: m);
-    }
-  }
-
   Future<void> _deleteAllMemories(BuildContext context) async {
     final s = AppScope.of(context);
     final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-      title: const Text('Hapus semua dokumentasi?'),
-      content: const Text('Semua foto dipindahkan ke Sampah Google Drive (bisa dipulihkan dalam 30 hari) dan dihapus dari SNOOP. '
+      title: const Text('Hapus semua dokumentasi sekolah?'),
+      content: const Text('Semua foto dokumentasi sekolah dipindahkan ke Sampah Google Drive (bisa dipulihkan dalam 30 hari) dan dihapus dari SNOOP. Dokumentasi PKL di Arsip tidak ikut dihapus. '
           'Lakukan ini sebelum menghapus aplikasi jika foto juga ingin dihapus dari Drive, karena menghapus aplikasi tidak bisa menghapus file di Drive.'),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
@@ -231,13 +206,13 @@ class SettingsView extends StatelessWidget {
           const SizedBox(width: S.x3),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(s.fullName, style: Theme.of(context).textTheme.titleMedium),
-            Text('Siswa • PKL', style: Theme.of(context).textTheme.bodySmall),
+            Text('Siswa', style: Theme.of(context).textTheme.bodySmall),
           ])),
         ]),
         const SizedBox(height: S.x3),
-        info(Icons.school_outlined, s.school),
-        info(Icons.business_outlined, s.company),
-        info(Icons.date_range_outlined, 'Periode ${s.period}'),
+        info(Icons.school_outlined, s.profileSet && s.school.isNotEmpty ? s.school : 'Sekolah belum diisi'),
+        info(Icons.class_outlined, [if (s.className.isNotEmpty) s.className, if (s.major.isNotEmpty) s.major].isEmpty ? 'Kelas dan jurusan belum diisi' : [if (s.className.isNotEmpty) s.className, if (s.major.isNotEmpty) s.major].join(' · ')),
+        info(Icons.date_range_outlined, s.academicYear.isEmpty ? 'Tahun ajaran belum diisi' : 'Tahun ajaran ${s.academicYear}'),
         const SizedBox(height: S.x2),
         PillButton(dark: false, icon: Icons.edit_outlined, label: 'Edit profil', onPressed: () => _editProfile(context)),
       ]),
@@ -255,9 +230,13 @@ class SettingsView extends StatelessWidget {
     return ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 96), children: [
       if (showTitle) const Padding(padding: EdgeInsets.only(bottom: S.x2), child: PageTitle('Pengaturan', icon: Icons.settings_outlined)),
       _profileCard(context, s),
-      group('Jam kerja'),
-      row(Icons.schedule, 'Jam pulang Senin–Jumat', trailing: minToHm(s.workEndMin), onTap: () => _pickWorkEnd(context, weekend: false)),
-      row(Icons.weekend_outlined, 'Jam pulang Sabtu–Minggu', trailing: minToHm(s.weekendEndMin), onTap: () => _pickWorkEnd(context, weekend: true)),
+      group('Akademik'),
+      row(Icons.calendar_month_outlined, 'Kalender Akademik', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AcademicCalendarScreen()))),
+      row(Icons.sticky_note_2_outlined, 'Catatan Pelajaran', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NotesScreen()))),
+      row(Icons.insights_rounded, 'Statistik Produktivitas', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProductivityScreen()))),
+      row(Icons.qr_code_2_rounded, 'QR Sekolah', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const QrScreen()))),
+      group('Arsip'),
+      row(Icons.inventory_2_outlined, 'Arsip PKL (baca-saja)', trailing: s.pklArchive == null ? null : '${s.attendance.length} absensi', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PklArchiveScreen()))),
       group('Akun'),
       row(Icons.cloud_outlined, 'Akun cloud',
           trailing: s.signedIn ? (s.userEmail ?? 'Masuk') : 'Belum masuk',
@@ -333,20 +312,17 @@ class SettingsView extends StatelessWidget {
       group('Perangkat'),
       row(Icons.desktop_windows_outlined, 'Connect to Desktop', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ConnectDesktopScreen()))),
       row(Icons.home_outlined, 'Jadikan launcher default', onTap: () => _makeDefault(context)),
-      group('Mode'),
-      row(s.schoolMode ? Icons.school_rounded : Icons.work_rounded, 'Mode aplikasi', trailing: s.schoolMode ? 'Sekolah' : 'PKL', onTap: () => _chooseMode(context)),
-      row(Icons.qr_code_2_rounded, 'QR Absen Sekolah', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const QrScreen()))),
       group('Tampilan'),
       row(Icons.brightness_6_outlined, 'Tema', trailing: s.theme, onTap: () => _chooseTheme(context)),
       row(Icons.interests_outlined, 'Logo', trailing: SnoopLogos.instance.variant.title, onTap: () => _chooseLogo(context)),
       group('Sinkronisasi'),
       _SyncCard(),
       group('Data'),
-      row(Icons.delete_sweep_outlined, 'Hapus semua dokumentasi', onTap: () => _deleteAllMemories(context)),
+      row(Icons.delete_sweep_outlined, 'Hapus semua dokumentasi sekolah', onTap: () => _deleteAllMemories(context)),
       const SizedBox(height: 16),
       if (s.signedIn)
         PillButton(label: 'Keluar dari akun cloud', dark: false, onPressed: () => showDialog(context: context, builder: (ctx) => AlertDialog(
-          title: const Text('Keluar?'), content: const Text('Data lokal tetap ada. Absensi baru akan antre sampai Anda masuk lagi.'),
+          title: const Text('Keluar?'), content: const Text('Data lokal tetap ada. Data baru akan antre sampai Anda masuk lagi.'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
             FilledButton(onPressed: () { Navigator.pop(ctx); s.signOut(); }, child: const Text('Keluar')),
@@ -403,6 +379,7 @@ class _SyncCardState extends State<_SyncCard> {
             s.signedIn ? 'Akun: ${s.userEmail ?? 'masuk'}' : 'Akun: belum masuk (data hanya di perangkat)',
             c: s.signedIn ? C.success : C.warning),
         line(Icons.sync, 'Antrean sinkronisasi: ${s.sync.pending} item'),
+        line(Icons.school_outlined, 'Data akademik (jadwal, tugas, catatan, acara): ${s.academic.pendingSyncCount} item hanya di perangkat. Sinkronisasi cloud untuk data ini belum tersedia di versi ini.', c: s.academic.pendingSyncCount > 0 ? C.warning : null),
         if (err != null) line(Icons.report_gmailerrorred_outlined, 'Error terakhir: $err', c: C.error),
         const Divider(height: 20),
         // Foto: status terpisah dari sinkronisasi metadata. Metadata tersinkron tidak berarti foto sudah di Drive.

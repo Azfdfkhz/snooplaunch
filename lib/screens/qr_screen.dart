@@ -7,7 +7,7 @@ import '../core/widgets.dart';
 import '../services/qr_store.dart';
 import '../services/system_bridge.dart';
 
-/// QR Absen Sekolah (Update 1.2.8): tempat menyimpan QR yang di-scan saat masuk sekolah.
+/// QR Sekolah (QR vault/viewer; Update 1.2.8, 2.0): tempat menyimpan QR yang di-scan saat masuk sekolah.
 /// Tambah dari galeri (mis. tangkapan layar QR), foto langsung, atau ketik isi QR. Ketuk untuk menampilkannya
 /// layar penuh dengan latar putih dan kecerahan maksimal supaya mudah dibaca pemindai.
 class QrScreen extends StatefulWidget {
@@ -46,7 +46,7 @@ class _QrScreenState extends State<QrScreen> {
     try {
       final x = await ImagePicker().pickImage(source: source, imageQuality: 100);
       if (x == null || !mounted) return;
-      final label = await _askLabel('QR absen');
+      final label = await _askLabel('QR sekolah');
       if (label == null) return;
       await _store.addImage(x.path, label);
       if (mounted) _toast('QR disimpan.');
@@ -57,7 +57,7 @@ class _QrScreenState extends State<QrScreen> {
 
   Future<void> _fromText() async {
     final text = TextEditingController();
-    final label = TextEditingController(text: 'QR absen');
+    final label = TextEditingController(text: 'QR sekolah');
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -79,7 +79,7 @@ class _QrScreenState extends State<QrScreen> {
       _toast('Isi QR tidak boleh kosong.');
       return;
     }
-    await _store.addText(t, label.text.trim().isEmpty ? 'QR absen' : label.text.trim());
+    await _store.addText(t, label.text.trim().isEmpty ? 'QR sekolah' : label.text.trim());
   }
 
   void _add() => showModalBottomSheet<void>(
@@ -90,7 +90,7 @@ class _QrScreenState extends State<QrScreen> {
             ListTile(
               leading: Icon(Icons.photo_library_outlined, color: C.fg),
               title: const Text('Pilih gambar QR dari galeri'),
-              subtitle: const Text('Mis. tangkapan layar atau foto QR absen'),
+              subtitle: const Text('Mis. tangkapan layar atau foto QR'),
               onTap: () { Navigator.pop(ctx); _fromImage(ImageSource.gallery); },
             ),
             ListTile(
@@ -141,7 +141,7 @@ class _QrScreenState extends State<QrScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('QR Absen Sekolah')),
+        appBar: AppBar(title: const Text('QR Sekolah')),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: _add,
           backgroundColor: C.accent,
@@ -160,9 +160,9 @@ class _QrScreenState extends State<QrScreen> {
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
                     Icon(Icons.qr_code_2_rounded, size: 72, color: C.text2),
                     const SizedBox(height: S.x3),
-                    Text('Belum ada QR absen', style: Theme.of(context).textTheme.titleMedium),
+                    Text('Belum ada QR sekolah', style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: S.x2),
-                    Text('Simpan QR absen sekolahmu di sini supaya bisa dibuka cepat saat masuk gerbang, tanpa internet.',
+                    Text('Simpan QR sekolahmu di sini (mis. QR masuk gerbang atau perpustakaan) supaya bisa dibuka cepat tanpa internet. SNOOP hanya menyimpan dan menampilkan QR; tidak memvalidasi absensi.',
                         textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
                   ]),
                 ),

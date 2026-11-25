@@ -231,8 +231,8 @@ class CapsuleNav extends StatelessWidget {
   static const _items = [
     (Icons.home_rounded, 'Beranda'),
     (Icons.calendar_today_rounded, 'Jadwal'),
+    (Icons.checklist_rounded, 'Tugas'),
     (Icons.photo_library_outlined, 'Memories'),
-    (Icons.notifications_none_rounded, 'Pengingat'),
     (Icons.settings_outlined, 'Pengaturan'),
   ];
   @override

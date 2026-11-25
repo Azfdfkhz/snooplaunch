@@ -7,14 +7,24 @@ Attendance _a(DateTime d) => Attendance(
     id: d.toIso8601String(), day: dayKey(d), checkInAt: d, status: AttendanceStatus.present);
 
 void main() {
-  test('1.5.1: Sabtu/Minggu tidak memuat jadwal Absen Masuk/Pulang bawaan, hari kerja tetap', () async {
-    SharedPreferences.setMockInitialValues({});
+  test('1.5.1 (data upgrade): Sabtu/Minggu tidak memuat jadwal Absen Masuk/Pulang bawaan, hari kerja tetap', () async {
+    // Pengguna lama (sudah punya data_version) tanpa jadwal tersimpan: jadwal PKL bawaan tetap dipulihkan seperti dulu.
+    SharedPreferences.setMockInitialValues({'data_version': 3});
     final s = AppState();
     await s.load();
     final sat = DateTime(2026, 11, 14), sun = DateTime(2026, 11, 15), mon = DateTime(2026, 11, 16);
     expect(s.itemsOn(sat).where((e) => e.title == 'Absen Masuk' || e.title == 'Absen Pulang'), isEmpty);
     expect(s.itemsOn(sun).where((e) => e.title == 'Absen Masuk' || e.title == 'Absen Pulang'), isEmpty);
     expect(s.itemsOn(mon).where((e) => e.title == 'Absen Masuk'), isNotEmpty);
+  });
+
+  test('2.0: instalasi baru TIDAK diberi jadwal/pengingat PKL bawaan', () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = AppState();
+    await s.load();
+    expect(s.schedule, isEmpty);
+    expect(s.reminders, isEmpty);
+    expect(s.pklArchive, isNull);
   });
 
   test('1.5.1: profil yang diisi tersimpan dan tetap ada setelah dimuat ulang (tidak kembali ke placeholder)', () async {

@@ -6,7 +6,11 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthException, PostgrestException;
 import 'package:uuid/uuid.dart';
+import '../features/pkl_archive/pkl_migration.dart';
+import '../features/reminders/school_reminder_planner.dart';
 import 'models.dart';
+import 'persistence/key_value_store.dart';
+import 'persistence/school_store.dart';
 import 'theme.dart' show kThemeModes;
 import '../services/backend_service.dart';
 import '../services/capture_service.dart';
@@ -21,7 +25,12 @@ const _uuid = Uuid();
 String dayKey(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
 /// State aplikasi (local-first, disimpan ke SharedPreferences).
-/// TODO: ganti penyimpanan dengan SQLite + antrean sinkronisasi ke Supabase.
+///
+/// SNOOP School Life 2.0: AppState sekarang berperan sebagai FASAD KOMPATIBILITAS (PRD 6.2). Domain akademik
+/// (jadwal pelajaran, tugas, kalender, catatan, pengingat sekolah) hidup di [academic] (`SchoolStore`) dan TIDAK
+/// ditambahkan ke sini. Field/metode PKL lama (absensi, jadwal kerja, bukti, jam kerja) dipertahankan apa adanya
+/// karena datanya adalah arsip PKL yang dibaca read-only oleh `features/pkl_archive`.
+/// TODO: ganti penyimpanan SharedPreferences dengan SQLite (Drift) + outbox transaksional ke Supabase.
 class AppState extends ChangeNotifier {
   SharedPreferences? _p;
   String name = 'Raka';
@@ -42,8 +51,25 @@ class AppState extends ChangeNotifier {
   int workEndFor(DateTime d) => d.weekday >= DateTime.saturday ? weekendEndMin : workEndMin;
   /// Catatan mingguan. Kunci: tanggal Senin minggu tersebut (yyyy-mm-dd).
   Map<String, String> weekNotes = {};
-  /// Versi skema data lokal. v2: jam pulang 17:00 Senin–Jumat, status jadwal per tanggal.
-  static const dataVersion = 3;
+  /// Versi skema data lokal. v2: jam pulang 17:00 Senin–Jumat, status jadwal per tanggal. v3: kegiatan terkunci ke tanggal.
+  /// v4 (2.0): School Workspace + Arsip PKL. Dinaikkan HANYA setelah migrasi terverifikasi (lihat [_migrateToSchoolLife]).
+  static const dataVersion = kDataVersionSchoolLife;
+  /// Versi yang tertulis di penyimpanan; menjadi [dataVersion] hanya bila migrasi 2.0 berhasil diverifikasi.
+  int _storedDataVersion = 3;
+  bool _migratedToSchoolLife = false;
+  /// Metadata arsip PKL (null pada instalasi baru yang tidak punya data PKL).
+  PklArchiveMeta? pklArchive;
+  /// Daftar ketidakcocokan jumlah record hasil verifikasi migrasi (kosong = lolos).
+  List<String> migrationIssues = const [];
+  /// Batas jam pengingat berulang (pengingat pribadi tiap N jam). Memakai nilai jam pulang lama agar jadwal pengingat
+  /// yang sudah ada tidak berubah perilaku.
+  int get reminderUntilMin => workEndMin;
+  /// Domain akademik School Workspace (repository terpisah dari AppState).
+  final SchoolStore academic = SchoolStore();
+  /// Profil siswa (2.0). Tidak diisi otomatis dari data PKL: kelas/jurusan/tahun ajaran tidak boleh dikarang.
+  String className = '';
+  String major = '';
+  String academicYear = '';
   int lateToleranceMin = 15;
   List<ScheduleItem> schedule = [];
   List<Reminder> reminders = [];
@@ -58,9 +84,6 @@ class AppState extends ChangeNotifier {
   /// False sampai pengguna menekan "Mulai" pada layar pembuka; setelah itu launcher langsung ke Home.
   bool onboarded = false;
   String theme = 'Terang';
-  /// Update 1.2.8: 'pkl' (absensi foto PKL) atau 'sekolah' (QR absen sekolah). Tidak menghapus data PKL.
-  String mode = 'pkl';
-  bool get schoolMode => mode == 'sekolah';
   bool busy = false; // cegah tap ganda
   final HybridSyncService sync = HybridSyncService();
   StreamSubscription? _authSub;
@@ -68,6 +91,9 @@ class AppState extends ChangeNotifier {
 
   Future<void> load() async {
     _p = await SharedPreferences.getInstance();
+    // Snapshot mentah SEBELUM apa pun dimigrasi: sumber untuk cadangan dan verifikasi jumlah record (PRD 9.1).
+    final legacySnapshot = <String, Object?>{for (final k in _p!.getKeys()) k: _p!.get(k)};
+    final freshInstall = !legacySnapshot.containsKey('data_version');
     // Data rusak/lama tidak boleh membuat aplikasi gagal start: elemen yang tidak terbaca dilewati.
     List<T> readList<T>(String k, T Function(Map<String, dynamic>) f) {
       final raw = _p!.getString(k);
@@ -95,7 +121,9 @@ class AppState extends ChangeNotifier {
     weekendEndMin = _p!.getInt('weekend_end') ?? weekendEndMin;
     lateToleranceMin = _p!.getInt('late_tolerance') ?? lateToleranceMin;
     theme = _p!.getString('theme') ?? theme;
-    mode = _p!.getString('app_mode') == 'sekolah' ? 'sekolah' : 'pkl';
+    className = _p!.getString('student_class') ?? '';
+    major = _p!.getString('student_major') ?? '';
+    academicYear = _p!.getString('student_year') ?? '';
     if (!kThemeModes.contains(theme)) theme = 'Terang'; // nilai lama/tidak dikenal (Update 1.2.8: Terang, Gelap, Ikuti sistem)
     schedule = readList('schedule', ScheduleItem.fromJson);
     reminders = readList('reminders', Reminder.fromJson);
@@ -133,23 +161,76 @@ class AppState extends ChangeNotifier {
         if (it.title != 'Absen Masuk' && it.title != 'Absen Pulang') it.date ??= dayKey(DateTime.now());
       }
     }
-    if (schedule.isEmpty) {
+    _storedDataVersion = version;
+    await _migrateToSchoolLife(legacySnapshot, fromVersion: version, fresh: freshInstall);
+    await academic.load(PrefsKeyValueStore(_p!));
+    // 2.0: instalasi baru TIDAK diberi jadwal "Absen Masuk/Pulang" atau pengingat PKL bawaan; itu data PKL, bukan sekolah.
+    if (schedule.isEmpty && !freshInstall) {
       schedule = [
         ScheduleItem(id: 's1', title: 'Absen Masuk', place: 'Kantor', startMin: 8 * 60),
         ScheduleItem(id: 's5', title: 'Absen Pulang', place: 'Kantor', startMin: 17 * 60),
       ];
     }
-    if (reminders.isEmpty) {
+    if (reminders.isEmpty && !freshInstall) {
       reminders = [
-        Reminder(id: 'r1', title: 'Minum Air', detail: 'Setiap 2 jam', type: 'air', atMin: 10 * 60 + 30, intervalMin: 120),
-        Reminder(id: 'r2', title: 'Istirahat', detail: 'Setiap 4 jam', type: 'istirahat', atMin: 12 * 60, intervalMin: 240),
-        Reminder(id: 'r3', title: 'Absen Pulang', detail: 'Senin–Jumat · sekali sehari', type: 'absen', atMin: 17 * 60, enabled: false, workdaysOnly: true),
-        Reminder(id: 'r4', title: 'Dokumentasi Kegiatan', detail: 'Setiap selesai tugas', type: 'dokumentasi', atMin: 15 * 60),
+        Reminder(id: 'r1', title: 'Minum Air', detail: 'Setiap 2 jam', type: 'personal', legacyType: 'air', atMin: 10 * 60 + 30, intervalMin: 120),
+        Reminder(id: 'r2', title: 'Istirahat', detail: 'Setiap 4 jam', type: 'personal', legacyType: 'istirahat', atMin: 12 * 60, intervalMin: 240),
+        Reminder(id: 'r3', title: 'Absen Pulang', detail: 'Senin–Jumat · sekali sehari', type: 'custom', legacyType: 'absen', atMin: 17 * 60, enabled: false, workdaysOnly: true),
+        Reminder(id: 'r4', title: 'Dokumentasi Kegiatan', detail: 'Setiap selesai tugas', type: 'personal', legacyType: 'dokumentasi', atMin: 15 * 60),
       ];
     }
     sync.workStartMin = workStartMin;
     sync.toleranceMin = lateToleranceMin;
+    if (_migratedToSchoolLife && version < kDataVersionSchoolLife) await _save(); // tulis data_version baru + pemetaan pengingat
     notifyListeners();
+  }
+
+  /// Migrasi 1.5.x -> 2.0 (PRD 9). Tidak memindahkan atau menghapus data: hanya menambah cadangan, metadata arsip,
+  /// penanda ruang kerja (default dokumentasi lama = 'pkl', lihat Memory.fromJson), dan pemetaan eksplisit tipe pengingat.
+  /// Idempotent: cadangan dan metadata hanya dibuat sekali. `data_version` baru HANYA disimpan bila jumlah record
+  /// terverifikasi; bila tidak, aplikasi tetap berjalan, data lama utuh di cadangan, dan migrasi dicoba lagi saat start.
+  Future<void> _migrateToSchoolLife(Map<String, Object?> legacy, {required int fromVersion, required bool fresh}) async {
+    final p = _p!;
+    if (fresh) {
+      _migratedToSchoolLife = true; // tidak ada data PKL untuk diarsipkan
+      return;
+    }
+    try {
+      if (fromVersion < kDataVersionSchoolLife && p.getString(kV4BackupKey) == null) {
+        await p.setString(kV4BackupKey, jsonEncode(buildLegacyBackup(legacy)));
+      }
+      if (p.getString(kPklArchiveMetaKey) == null) {
+        final meta = buildPklArchiveMeta(legacy, now: DateTime.now());
+        await p.setString(kPklArchiveMetaKey, jsonEncode(meta.toJson()));
+      }
+      pklArchive = PklArchiveMeta.fromJson(Map<String, dynamic>.from(jsonDecode(p.getString(kPklArchiveMetaKey)!) as Map));
+      // Pemetaan eksplisit tipe pengingat lama; tipe asli disimpan di legacyType.
+      for (final r in reminders) {
+        if (!isLegacyReminderType(r.type)) continue;
+        final m = mapLegacyReminderType(r.type);
+        r.legacyType ??= r.type;
+        r.type = m.type;
+        if (m.forceDisabled) r.enabled = false;
+      }
+      if (fromVersion >= kDataVersionSchoolLife) {
+        _migratedToSchoolLife = true;
+        return;
+      }
+      // Verifikasi. `schedule` dikecualikan karena migrasi v2->v3 yang sudah ada memang membuang contoh bawaan.
+      final expected = Map<String, int>.from(pklArchive!.counts)..remove('schedule');
+      migrationIssues = verifyCounts(expected, {
+        'attendance': attendance.length,
+        'memories': memories.length,
+        'evidence': evidence.length,
+        'week_notes': weekNotes.length,
+        'reminders': reminders.length,
+      });
+      _migratedToSchoolLife = migrationIssues.isEmpty;
+      await p.setBool(kV4VerifiedKey, _migratedToSchoolLife);
+    } catch (e) {
+      migrationIssues = ['Migrasi gagal: $e'];
+      _migratedToSchoolLife = false;
+    }
   }
 
   /// Dipanggil setelah runApp: inisialisasi backend, notifikasi, dan sinkronisasi tanpa
@@ -191,6 +272,9 @@ class AppState extends ChangeNotifier {
     } catch (_) {
       // Data lokal tetap berfungsi bila izin notifikasi tidak tersedia.
     }
+    // 2.0: pengingat akademik otomatis (kelas, tenggat, event). Direkonsiliasi saat start dan setiap data akademik berubah.
+    academic.addListener(_scheduleReconcile);
+    await reconcileSchoolReminders();
     await sync.retryPending();
     unawaited(pullAttendanceFromServer());
     unawaited(syncProfile());
@@ -198,8 +282,28 @@ class AppState extends ChangeNotifier {
     unawaited(migrateLegacyPhotos());
   }
 
+  Timer? _reconcileTimer;
+
+  void _scheduleReconcile() {
+    _reconcileTimer?.cancel();
+    _reconcileTimer = Timer(const Duration(milliseconds: 800), () => unawaited(reconcileSchoolReminders()));
+  }
+
+  /// Menyusun ulang seluruh notifikasi sekolah dari jadwal/tugas/event. ID notifikasi deterministik dan ID lama dibatalkan
+  /// lebih dulu, sehingga pemanggilan berulang tidak pernah menggandakan notifikasi (PRD 4.7).
+  Future<void> reconcileSchoolReminders() async {
+    try {
+      final ids = await NotificationService.instance.applySchoolPlan(academic.plannedReminders(), previousIds: academic.notificationIds);
+      academic.setNotificationIds(ids);
+    } catch (_) {
+      // Izin notifikasi ditolak atau platform tidak mendukung: data tetap tersimpan, pengingat sekolah tidak berbunyi.
+    }
+  }
+
   @override
   void dispose() {
+    _reconcileTimer?.cancel();
+    academic.removeListener(_scheduleReconcile);
     _authSub?.cancel();
     _connSub?.cancel();
     super.dispose();
@@ -288,7 +392,9 @@ class AppState extends ChangeNotifier {
       'work_end': workEndMin,
       'late_tolerance': lateToleranceMin,
       'theme': theme,
-      'app_mode': mode,
+      'student_class': className,
+      'student_major': major,
+      'student_year': academicYear,
       'schedule': jsonEncode(schedule.map((e) => e.toJson()).toList()),
       'reminders': jsonEncode(reminders.map((e) => e.toJson()).toList()),
       'memories': jsonEncode(memories.map((e) => e.toJson()).toList()),
@@ -299,7 +405,8 @@ class AppState extends ChangeNotifier {
       'onboarded': onboarded,
       'week_notes': jsonEncode(weekNotes),
       'weekend_end': weekendEndMin,
-      'data_version': dataVersion,
+      // Naik ke versi 4 hanya setelah migrasi terverifikasi (PRD 9.3 langkah 8).
+      'data_version': _migratedToSchoolLife ? dataVersion : _storedDataVersion,
     };
     _saveChain = _saveChain.then((_) async {
       for (final e in snapshot.entries) {
@@ -369,12 +476,17 @@ class AppState extends ChangeNotifier {
         notes: [for (final e in weekNotes.entries) if (e.value.trim().isNotEmpty) <String, dynamic>{'id': e.key, 'text': e.value}],
       );
 
-  void updateProfile({required String fullName, required String school, required String company, required String period}) {
+  /// Mengubah profil. 2.0: pengguna mengisi profil SISWA (nama, sekolah, kelas, jurusan, tahun ajaran). [company] dan
+  /// [period] adalah data PKL lama; bila tidak diberikan, nilai yang ada dipertahankan (tidak dihapus, tidak diedit dari UI).
+  void updateProfile({required String fullName, required String school, String? company, String? period, String? className, String? major, String? academicYear}) {
     this.fullName = fullName.trim();
     name = this.fullName.split(RegExp(r'\s+')).firstOrNull ?? this.fullName;
     this.school = school.trim();
-    this.company = company.trim();
-    this.period = period.trim();
+    if (company != null) this.company = company.trim();
+    if (period != null) this.period = period.trim();
+    if (className != null) this.className = className.trim();
+    if (major != null) this.major = major.trim();
+    if (academicYear != null) this.academicYear = academicYear.trim();
     profileSet = true;
     _profileDirty = true;
     changed();
@@ -387,7 +499,10 @@ class AppState extends ChangeNotifier {
   Future<void> pushProfileToServer() async {
     if (!signedIn || !_profileDirty || !profileSet) return;
     try {
-      await BackendService.instance.upsertProfile(fullName: fullName, school: school, company: company, period: period);
+      await BackendService.instance.upsertProfile(
+        fullName: fullName, school: school, company: company, period: period,
+        className: className, major: major, academicYear: academicYear,
+      );
       _profileDirty = false;
       await _save();
     } catch (_) {
@@ -423,6 +538,12 @@ class AppState extends ChangeNotifier {
       if (inst != null && inst.trim().isNotEmpty) school = inst.trim();
       if (comp != null && comp.trim().isNotEmpty) company = comp.trim();
       if (per != null && per.trim().isNotEmpty) period = per.trim();
+      final cls = row['class_name'] as String?;
+      final maj = row['major'] as String?;
+      final yr = row['academic_year'] as String?;
+      if (cls != null && cls.trim().isNotEmpty) className = cls.trim();
+      if (maj != null && maj.trim().isNotEmpty) major = maj.trim();
+      if (yr != null && yr.trim().isNotEmpty) academicYear = yr.trim();
       profileSet = true;
       notifyListeners();
       await _save();
@@ -466,6 +587,11 @@ class AppState extends ChangeNotifier {
               driveUrl: driveUrl,
               driveFileId: uploaded ? driveId : null,
               uploadError: uploaded ? null : 'Foto tidak ada di Drive.',
+              // Baris tanpa kolom `workspace` (server belum dimigrasi) atau tanpa nilai = dokumentasi PKL.
+              workspace: row['workspace'] == 'school' ? 'school' : 'pkl',
+              category: row['category'] as String?,
+              subjectId: row['subject_id'] as String?,
+              taskId: row['task_id'] as String?,
             );
             memories.add(m);
             byId[id] = m;
@@ -498,7 +624,6 @@ class AppState extends ChangeNotifier {
   }
 
   void setTheme(String value) { theme = value; changed(); }
-  void setMode(String value) { mode = value == 'sekolah' ? 'sekolah' : 'pkl'; changed(); }
 
   void setWorkHours({int? weekdayEnd, int? weekendEnd}) {
     if (weekdayEnd != null) workEndMin = weekdayEnd;
@@ -834,6 +959,12 @@ class AppState extends ChangeNotifier {
 
   Memory? memoryById(String id) => memories.where((m) => m.id == id).firstOrNull;
 
+  /// Dokumentasi ruang kerja sekolah (terbaru lebih dulu). Dokumentasi PKL lama tidak termasuk.
+  List<Memory> get schoolMemories => [for (final m in memories) if (m.isSchool) m];
+
+  /// Dokumentasi PKL (arsip, read-only). Data lama tanpa penanda ruang kerja termasuk di sini.
+  List<Memory> get pklMemories => [for (final m in memories) if (m.isPkl) m];
+
   /// Foto yang masih berupa berkas lokal dan belum terkonfirmasi di Drive (termasuk foto versi lama).
   List<Memory> get photosPendingUpload =>
       memories.where((m) => m.hasLocalPhoto && !m.inCloud && !_fresh.contains(m.id) && m.upload != UploadStatus.uploading).toList();
@@ -996,10 +1127,11 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  /// Menghapus semua dokumentasi (cloud dan perangkat). Mengembalikan daftar pesan gagal (kosong = berhasil).
+  /// Menghapus semua dokumentasi SEKOLAH (cloud dan perangkat). Dokumentasi PKL adalah arsip read-only dan TIDAK
+  /// ikut terhapus (PRD 4.10). Mengembalikan daftar pesan gagal (kosong = berhasil).
   Future<List<String>> removeAllMemories() async {
     final errors = <String>[];
-    for (final id in memories.map((m) => m.id).toList()) {
+    for (final id in memories.where((m) => m.isSchool).map((m) => m.id).toList()) {
       final err = await removeMemory(id);
       if (err != null) errors.add(err);
     }

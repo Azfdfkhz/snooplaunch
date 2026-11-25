@@ -136,34 +136,65 @@ class BackendService {
     return row == null ? null : Map<String, dynamic>.from(row as Map);
   }
 
-  Future<void> upsertProfile({required String fullName, required String school, required String company, required String period}) async {
+  static bool _missingColumn(PostgrestException e) => e.code == 'PGRST204' || e.code == '42703' || e.message.contains('column');
+
+  /// 2.0: `className`, `major`, `academicYear` = profil siswa (migration_011). Dikirim hanya bila terisi, dan bila kolomnya
+  /// belum ada di server (migration_011 belum dijalankan) profil tetap tersimpan tanpa kolom itu. `company`/`period` = data
+  /// PKL lama, tetap dipertahankan apa adanya.
+  Future<void> upsertProfile({
+    required String fullName,
+    required String school,
+    required String company,
+    required String period,
+    String? className,
+    String? major,
+    String? academicYear,
+  }) async {
     final uid = client.auth.currentUser?.id;
     if (uid == null) throw StateError('Belum masuk.');
     final base = <String, dynamic>{'id': uid, 'full_name': fullName, 'institution': school, 'company_name': company};
-    try {
-      await client.from('profiles').upsert({...base, 'period': period}, onConflict: 'id');
-    } on PostgrestException catch (e) {
-      // Kolom `period` belum ada (migration_009 belum dijalankan): simpan kolom lain agar nama tetap aman.
-      if (e.code == 'PGRST204' || e.code == '42703' || e.message.contains('period')) {
-        await client.from('profiles').upsert(base, onConflict: 'id');
-      } else {
+    final student = <String, dynamic>{
+      if (className != null && className.trim().isNotEmpty) 'class_name': className.trim(),
+      if (major != null && major.trim().isNotEmpty) 'major': major.trim(),
+      if (academicYear != null && academicYear.trim().isNotEmpty) 'academic_year': academicYear.trim(),
+    };
+    Future<bool> attempt(Map<String, dynamic> row) async {
+      try {
+        await client.from('profiles').upsert(row, onConflict: 'id');
+        return true;
+      } on PostgrestException catch (e) {
+        if (_missingColumn(e)) return false;
         rethrow;
       }
     }
+
+    if (student.isNotEmpty && await attempt({...base, 'period': period, ...student})) return;
+    // Kolom `period` belum ada (migration_009 belum dijalankan): simpan kolom lain agar nama tetap aman.
+    if (await attempt({...base, 'period': period})) return;
+    await client.from('profiles').upsert(base, onConflict: 'id');
   }
 
   // ---------------------------------------------------------------- Memories dari cloud (Update 1.5.1)
 
   /// Seluruh dokumentasi milik pengguna (paginasi 1000 baris). RLS membatasi ke baris sendiri.
   Future<List<Map<String, dynamic>>> fetchAllMemories() async {
+    const legacyCols = 'id, schedule_id, captured_at, latitude, longitude, location_accuracy_m, title, description, drive_file_id, drive_file_url, upload_status';
+    // 2.0: kolom ruang kerja (migration_011). Bila belum ada, baca kolom lama; semua dokumentasi lama dianggap PKL.
+    for (final cols in ['$legacyCols, workspace, category, subject_id, task_id', legacyCols]) {
+      try {
+        return await _fetchMemoryPages(cols);
+      } on PostgrestException catch (e) {
+        if (cols == legacyCols || !_missingColumn(e)) rethrow;
+      }
+    }
+    return const [];
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchMemoryPages(String cols) async {
     final out = <Map<String, dynamic>>[];
     var from = 0;
     while (true) {
-      final rows = await client
-          .from('documentations')
-          .select('id, schedule_id, captured_at, latitude, longitude, location_accuracy_m, title, description, drive_file_id, drive_file_url, upload_status')
-          .order('captured_at', ascending: false)
-          .range(from, from + 999);
+      final rows = await client.from('documentations').select(cols).order('captured_at', ascending: false).range(from, from + 999);
       final list = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
       out.addAll(list);
       if (list.length < 1000) break;
@@ -180,6 +211,14 @@ class BackendService {
       'captured_at': m.capturedAt.toUtc().toIso8601String(),
       'latitude': m.lat, 'longitude': m.lng, 'location_accuracy_m': m.accuracy,
       'title': m.title, 'description': m.description,
+      // 2.0: penanda ruang kerja hanya dikirim untuk dokumentasi sekolah. Dokumentasi PKL (lama) dikirim persis seperti
+      // sebelumnya sehingga tetap berfungsi walau migration_011 belum dijalankan; kolom `workspace` default-nya 'pkl'.
+      if (m.isSchool) ...{
+        'workspace': 'school',
+        'category': m.category,
+        // subject_id/task_id sengaja TIDAK dikirim: mata pelajaran dan tugas belum disinkronkan ke server, sehingga
+        // kunci asing akan ditolak. Tautan itu tetap tersimpan lokal; dikirim setelah sinkronisasi akademik tersedia.
+      },
     }, onConflict: 'id');
   }
 

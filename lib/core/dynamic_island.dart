@@ -62,6 +62,7 @@ class _DynamicIslandState extends State<DynamicIsland> {
   }
 
   static IconData _reminderIcon(String type) => switch (type) {
+        'personal' => Icons.self_improvement_rounded,
         'air' => Icons.water_drop_rounded,
         'istirahat' => Icons.free_breakfast_rounded,
         'absen' => Icons.how_to_reg_rounded,

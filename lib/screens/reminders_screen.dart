@@ -3,6 +3,9 @@ import '../core/braun.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import '../core/state.dart' show AppState;
+import '../features/reminders/school_reminder_planner.dart';
+import '../features/school_home/school_ui.dart' show sectionLabel, deviceCard;
 import '../main.dart';
 
 /// Pembungkus untuk dibuka dari halaman lain (dengan AppBar dan tombol kembali).
@@ -25,20 +28,21 @@ class RemindersView extends StatefulWidget {
 
 class _RemindersViewState extends State<RemindersView> {
   String _f = 'Semua';
-  static const _filters = ['Semua', 'Rutin', 'Jadwal', 'Kustom'];
+  static const _filters = ['Semua', 'Pribadi', 'Kustom'];
 
   bool _match(Reminder r) => switch (_f) {
-        'Rutin' => r.type == 'air' || r.type == 'istirahat',
-        'Jadwal' => r.type == 'absen' || r.type == 'dokumentasi',
-        'Kustom' => r.type == 'kustom',
+        'Pribadi' => r.type == 'personal' || r.type == 'study_reminder',
+        'Kustom' => r.type == 'custom',
         _ => true,
       };
 
   IconData _icon(String t) => switch (t) {
-        'air' => Icons.water_drop_outlined,
-        'istirahat' => Icons.free_breakfast_outlined,
-        'absen' => Icons.fingerprint_rounded,
-        'dokumentasi' => Icons.photo_camera_outlined,
+        'personal' => Icons.self_improvement_outlined,
+        'study_reminder' => Icons.menu_book_outlined,
+        'class_reminder' => Icons.schedule_rounded,
+        'assignment_due' => Icons.assignment_late_outlined,
+        'exam_reminder' => Icons.quiz_outlined,
+        'event_reminder' => Icons.event_outlined,
         _ => Icons.notifications_none,
       };
 
@@ -92,7 +96,7 @@ class _RemindersViewState extends State<RemindersView> {
               onChanged: (v) => setD(() => workdays = v),
             ),
             if (interval > 0)
-              Text('Pengingat berulang sampai jam pulang hari itu.', style: TextStyle(fontSize: 12, color: C.text2)),
+              Text('Pengingat berulang sampai pukul ${minToHm(AppScope.of(context).reminderUntilMin)} hari itu.', style: TextStyle(fontSize: 12, color: C.text2)),
           ]),
         ),
         actions: [
@@ -104,7 +108,7 @@ class _RemindersViewState extends State<RemindersView> {
               final atMin = time.hour * 60 + time.minute;
               if (existing == null) {
                 final r = Reminder(
-                  id: 'r${DateTime.now().microsecondsSinceEpoch}', title: text, detail: '', type: 'kustom',
+                  id: 'r${DateTime.now().microsecondsSinceEpoch}', title: text, detail: '', type: 'custom',
                   atMin: atMin, intervalMin: interval, workdaysOnly: workdays,
                 );
                 r.detail = r.summary;
@@ -122,6 +126,55 @@ class _RemindersViewState extends State<RemindersView> {
     title.dispose();
   }
 
+  static const _leadOptions = {
+    'class': [0, 5, 10, 15, 30],
+    'due': [0, 30, 60, 180, 1440],
+    'event': [0, 15, 30, 60, 1440],
+  };
+
+  String _leadLabel(int m) => m == 0 ? 'Mati' : m >= 1440 ? '${m ~/ 1440} hari' : m >= 60 ? '${m ~/ 60} jam' : '$m mnt';
+
+  /// Pengingat otomatis dari jadwal, tugas, dan kalender (PRD 4.7). Pengaturan: berapa lama sebelum dimulai.
+  Widget _autoSection(AppState s) {
+    final cfg = s.academic.reminderSettings;
+    final planned = s.academic.plannedReminders();
+    int n(String t) => planned.where((p) => p.type == t).length;
+    Widget row(String key, String title, String sub, int value, ReminderSettings Function(int) apply, int count) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('$title · $count aktif', style: const TextStyle(fontWeight: FontWeight.w800)),
+            Text(sub, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 6),
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final m in _leadOptions[key]!)
+                ChoiceChip(
+                  label: Text(_leadLabel(m)),
+                  selected: value == m,
+                  showCheckmark: false,
+                  onSelected: (_) => s.academic.setReminderSettings(apply(m)),
+                  selectedColor: C.accent,
+                  backgroundColor: B.cap,
+                  side: BorderSide(color: value == m ? B.orangeLo : B.hair),
+                  labelStyle: TextStyle(fontWeight: FontWeight.w700, color: value == m ? Colors.white : C.text2),
+                ),
+            ]),
+          ]),
+        );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: deviceCard(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Pengingat otomatis', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
+          const SizedBox(height: 2),
+          Text('Dibuat dari jadwal, tugas, dan kalender. Notifikasi diatur ulang otomatis saat data berubah.', style: Theme.of(context).textTheme.bodySmall),
+          row('class', 'Sebelum kelas', 'Berulang tiap minggu. Tidak mengikuti pembatalan kelas pada tanggal tertentu.', cfg.classLeadMin, (m) => cfg.copyWith(classLeadMin: m), n('class_reminder')),
+          row('due', 'Sebelum tenggat tugas', 'Hanya tugas yang belum selesai.', cfg.dueLeadMin, (m) => cfg.copyWith(dueLeadMin: m), n('assignment_due')),
+          row('event', 'Sebelum ujian & acara', 'Libur tidak dihitung. Acara sepanjang hari berbunyi pukul 07:00.', cfg.eventLeadMin, (m) => cfg.copyWith(eventLeadMin: m), n('exam_reminder') + n('event_reminder')),
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
@@ -136,8 +189,10 @@ class _RemindersViewState extends State<RemindersView> {
       FilterChipRow<String>(options: _filters, selected: _f, labelOf: (f) => f, onSelected: (f) => setState(() => _f = f)),
       Expanded(
         child: list.isEmpty
-            ? const EmptyState('Belum ada pengingat di kategori ini.')
+            ? ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 16), children: [ListenableBuilder(listenable: s.academic, builder: (_, __) => _autoSection(s)), const SizedBox(height: 12), const EmptyState('Belum ada pengingat pribadi di kategori ini.')])
             : ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 16), children: [
+                ListenableBuilder(listenable: s.academic, builder: (_, __) => _autoSection(s)),
+                sectionLabel('Pengingat pribadi & kustom'),
                 for (final r in list)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),

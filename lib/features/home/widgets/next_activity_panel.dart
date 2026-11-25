@@ -14,7 +14,9 @@ class NextActivityPanel extends StatelessWidget {
   final VoidCallback onOpenSchedule;
   final NextActivityInfo info;
   final double scale;
-  const NextActivityPanel({super.key, required this.expanded, required this.onToggle, required this.onOpenSchedule, required this.info, required this.scale});
+  /// 2.0: nama tujuan ketuk untuk pembaca layar (default 'jadwal').
+  final String openLabel;
+  const NextActivityPanel({super.key, required this.expanded, required this.onToggle, required this.onOpenSchedule, required this.info, required this.scale, this.openLabel = 'jadwal'});
 
   static const refCollapsed = 33.0, refExpanded = 180.0, refH = 164.0, refTab = 7.0;
   static const _ink = Color(0xFF4A1E10);
@@ -74,7 +76,7 @@ class NextActivityPanel extends StatelessWidget {
                         opacity: expanded ? 1 : 0,
                         child: Semantics(
                           button: true,
-                          label: 'Berikutnya: ${info.title}${info.hasNext ? ', pukul ${info.time}' : ''}. ${info.progress}. Ketuk untuk membuka jadwal',
+                          label: 'Berikutnya: ${info.title}${info.hasNext ? ', pukul ${info.time}' : ''}. ${info.progress}. Ketuk untuk membuka $openLabel',
                           excludeSemantics: true,
                           child: InkWell(onTap: onOpenSchedule, child: _content(k)),
                         ),

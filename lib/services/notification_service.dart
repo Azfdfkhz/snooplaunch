@@ -2,6 +2,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 import '../core/models.dart';
+import '../features/reminders/school_reminder_planner.dart';
 
 /// Pengingat lokal. Tidak memerlukan jaringan. Pengingat dapat:
 ///  - sekali sehari, atau berulang tiap N menit dari jam awal sampai [untilMin] (jam pulang),
@@ -29,6 +30,9 @@ class NotificationService {
     } else {
       for (final r in reminders.toList()) {
         if (r.enabled) await scheduleReminder(r, untilMin: untilMin);
+      }
+      for (final p in _schoolPlan) {
+        await _scheduleSchool(p); // 2.0: pengingat sekolah ikut dijadwalkan ulang setelah mute dicabut
       }
     }
   }
@@ -125,6 +129,59 @@ class NotificationService {
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: weekday == null ? DateTimeComponents.time : DateTimeComponents.dayOfWeekAndTime,
+    );
+  }
+
+  // ---------------------------------------------------------------- Pengingat sekolah (2.0)
+
+  List<PlannedReminder> _schoolPlan = const [];
+
+  static const _schoolDetails = NotificationDetails(
+    android: AndroidNotificationDetails(
+      'snoop_school', 'Pengingat Sekolah',
+      channelDescription: 'Pengingat kelas, tenggat tugas, ujian, dan acara sekolah',
+      importance: Importance.high, priority: Priority.high,
+    ),
+  );
+
+  /// Mengganti seluruh jadwal notifikasi sekolah dengan [plan]. ID lama ([previousIds]) dibatalkan lebih dulu dan ID baru
+  /// deterministik dari sumbernya, jadi memanggil ini berulang tidak pernah menggandakan notifikasi. Mengembalikan ID aktif.
+  Future<List<int>> applySchoolPlan(List<PlannedReminder> plan, {Iterable<int> previousIds = const []}) async {
+    await initialize();
+    for (final id in previousIds.toList()) {
+      await _plugin.cancel(id);
+    }
+    _schoolPlan = plan;
+    if (!_muted) {
+      for (final p in plan) {
+        await _scheduleSchool(p);
+      }
+    }
+    return [for (final p in plan) p.id];
+  }
+
+  Future<void> _scheduleSchool(PlannedReminder p) async {
+    final now = tz.TZDateTime.now(tz.local);
+    if (p.weekly) {
+      final m = p.minuteOfDay!;
+      var at = tz.TZDateTime(tz.local, now.year, now.month, now.day, m ~/ 60, m % 60);
+      while (at.weekday != p.weekday || !at.isAfter(now)) {
+        at = at.add(const Duration(days: 1));
+      }
+      await _plugin.zonedSchedule(
+        p.id, p.title, p.body, at, _schoolDetails,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+      );
+      return;
+    }
+    final when = p.at;
+    if (when == null || !when.isAfter(DateTime.now())) return;
+    await _plugin.zonedSchedule(
+      p.id, p.title, p.body, tz.TZDateTime.from(when, tz.local), _schoolDetails,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
     );
   }
 

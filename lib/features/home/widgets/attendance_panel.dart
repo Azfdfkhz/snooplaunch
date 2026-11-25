@@ -14,7 +14,10 @@ class AttendancePanel extends StatelessWidget {
   final String label;
   final Memory? photo;
   final double scale;
-  const AttendancePanel({super.key, required this.expanded, required this.onToggle, required this.label, required this.photo, required this.scale});
+  /// 2.0: nama panel untuk pembaca layar dan teks "foto kosong" (default = perilaku PKL lama).
+  final String semanticsName;
+  final String emptyText;
+  const AttendancePanel({super.key, required this.expanded, required this.onToggle, required this.label, required this.photo, required this.scale, this.semanticsName = 'Absensi', this.emptyText = 'Belum ada foto'});
 
   static const refW = 165.0, refCollapsed = 60.0, refExpanded = 157.0;
 
@@ -29,7 +32,7 @@ class AttendancePanel extends StatelessWidget {
       container: true,
       button: true,
       expanded: expanded,
-      label: 'Absensi: $label. Ketuk untuk ${expanded ? 'menutup' : 'membuka'} foto absensi',
+      label: '$semanticsName: $label. Ketuk untuk ${expanded ? 'menutup' : 'membuka'} panel',
       excludeSemantics: true,
       child: AnimatedContainer(
         duration: dur,
@@ -88,7 +91,7 @@ class AttendancePanel extends StatelessWidget {
                   decoration: BoxDecoration(color: Colors.white.withValues(alpha: .7), boxShadow: [BoxShadow(color: DS.shadow, blurRadius: 6 * k)]),
                   child: SizedBox.expand(
                     child: photo == null
-                        ? Center(child: Padding(padding: EdgeInsets.all(6 * k), child: PixelText('Belum ada foto', unit: 1.7 * k, color: DS.charcoal.withValues(alpha: .6), alignment: Alignment.center)))
+                        ? Center(child: Padding(padding: EdgeInsets.all(6 * k), child: PixelText(emptyText, unit: 1.7 * k, color: DS.charcoal.withValues(alpha: .6), alignment: Alignment.center)))
                         : MemoryPhoto(memory: photo!, thumb: true, cacheWidth: 500, compact: true, placeholderColor: DS.beige),
                   ),
                 ),

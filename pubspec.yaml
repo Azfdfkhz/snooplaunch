@@ -1,7 +1,7 @@
 name: snoop
-description: SNOOP - Smart PKL Launcher
+description: SNOOP 
 publish_to: 'none'
-version: 1.5.3+1
+version: 2.0.0+1
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

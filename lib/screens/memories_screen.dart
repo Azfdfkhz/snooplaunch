@@ -8,6 +8,8 @@ import '../core/glass.dart';
 import '../core/widgets.dart';
 import '../main.dart';
 import '../core/state.dart' show dayKey;
+import '../features/pkl_archive/screens/pkl_memories_screen.dart';
+import '../features/school_memories/school_documentation_flow.dart';
 import 'attendance_fix.dart';
 import 'attendance_share.dart';
 
@@ -32,7 +34,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
   String _f = 'Semua';
   bool _refreshing = false;
   bool _requested = false;
-  static const _filters = ['Semua', 'Hari Ini', 'Minggu Ini', 'Kegiatan'];
+  static const _filters = ['Semua', 'Hari Ini', 'Minggu Ini', 'Kelas', 'Acara', 'Tugas & Proyek'];
 
   Future<void> _refresh() async {
     if (_refreshing) return;
@@ -141,11 +143,13 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day);
     final startOfWeek = startOfDay.subtract(Duration(days: now.weekday - 1));
-    final all = [...s.memories]..sort((a, b) => b.capturedAt.compareTo(a.capturedAt));
+    final all = [...s.schoolMemories]..sort((a, b) => b.capturedAt.compareTo(a.capturedAt));
     final list = all.where((m) => switch (_f) {
           'Hari Ini' => !m.capturedAt.isBefore(startOfDay),
           'Minggu Ini' => !m.capturedAt.isBefore(startOfWeek),
-          'Kegiatan' => m.scheduleId != null,
+          'Kelas' => m.category == 'classroom',
+          'Acara' => m.category == 'school_event' || m.category == 'extracurricular',
+          'Tugas & Proyek' => m.category == 'assignment' || m.category == 'project',
           _ => true,
         }).toList();
     final legacy = s.photosPendingUpload.length;
@@ -158,7 +162,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
               all.isEmpty
-                  ? (s.signedIn ? 'Belum ada dokumentasi.\nLakukan absensi untuk membuat memori pertama.' : 'Belum ada dokumentasi.\nMasuk ke akun cloud di Pengaturan agar dokumentasi lama dimuat kembali.')
+                  ? 'Belum ada dokumentasi sekolah.\nKetuk tombol + untuk menambah foto kelas, acara, tugas, atau proyek.'
                   : 'Tidak ada dokumentasi untuk filter ini.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 14, height: 1.4, color: DS.inkSoft),
@@ -168,11 +172,25 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
 
     return ColoredBox(
       color: DS.cream,
-      child: Column(children: [
+      child: Stack(children: [Column(children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
           child: Row(children: [
             Expanded(child: PixelText('Memories', unit: 3.4, color: DS.ink)),
+            Semantics(
+              button: true,
+              label: 'Buka Arsip PKL, baca-saja',
+              excludeSemantics: true,
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PklMemoriesScreen())),
+                child: Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(color: DS.teal, borderRadius: BorderRadius.circular(999)),
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.inventory_2_outlined, size: 14, color: DS.onDark), SizedBox(width: 4), Text('Arsip PKL', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: DS.onDark))]),
+                ),
+              ),
+            ),
             if (_refreshing)
               const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: C.accent))
             else
@@ -212,13 +230,21 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
           ),
         ),
       ]),
+        Positioned(
+          right: 20,
+          bottom: 20,
+          child: FloatingActionButton(heroTag: 'mem_add', tooltip: 'Tambah dokumentasi sekolah', onPressed: () => addSchoolDocumentation(context), child: const Icon(Icons.add_a_photo_outlined)),
+        ),
+      ]),
     );
   }
 }
 
 class MemoryDetailScreen extends StatefulWidget {
   final String id;
-  const MemoryDetailScreen({super.key, required this.id});
+  /// 2.0: true untuk dokumentasi arsip PKL: tanpa hapus, perbaiki absensi, atau unggah (PRD 3.2, 4.10).
+  final bool readOnly;
+  const MemoryDetailScreen({super.key, required this.id, this.readOnly = false});
   @override
   State<MemoryDetailScreen> createState() => _MemoryDetailScreenState();
 }
@@ -282,10 +308,10 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
     final sched = s.schedule.where((e) => e.id == m.scheduleId).firstOrNull; // kegiatan bisa berbeda per tanggal; tautan tetap berlaku
     final st = photoStatusOf(m);
     final att = s.today;
-    final canFix = m.isAttendance && att != null && att.status != AttendanceStatus.leave && att.day == dayKey(m.capturedAt) &&
+    final canFix = !widget.readOnly && m.isAttendance && att != null && att.status != AttendanceStatus.leave && att.day == dayKey(m.capturedAt) &&
         (!m.isAttendanceOut || att.checkOutAt != null);
     final fixAt = m.isAttendanceOut ? (att?.checkOutAt ?? m.capturedAt) : (att?.checkInAt ?? m.capturedAt);
-    final canUpload = m.hasLocalPhoto && !m.inCloud && m.upload != UploadStatus.uploading;
+    final canUpload = !widget.readOnly && m.hasLocalPhoto && !m.inCloud && m.upload != UploadStatus.uploading;
     final hasLoc = m.lat != null && m.lng != null;
 
     Widget row(IconData i, String k, String v) => Padding(
@@ -314,7 +340,7 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
           title: m.title,
           subtitle: '${m.capturedAt.day} ${kMonths[m.capturedAt.month - 1]} ${m.capturedAt.year} · ${hm(m.capturedAt)} WIB',
           onBack: () => Navigator.of(context).pop(),
-          trailing: GlassCircleButton(icon: Icons.delete_outline_rounded, tooltip: 'Hapus', size: 48, onTap: _deleting ? null : _delete),
+          trailing: widget.readOnly ? null : GlassCircleButton(icon: Icons.delete_outline_rounded, tooltip: 'Hapus', size: 48, onTap: _deleting ? null : _delete),
         ),
         Expanded(
           child: ListView(padding: const EdgeInsets.fromLTRB(S.x6, S.x3, S.x6, S.x4), children: [
@@ -336,6 +362,7 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
               child: Column(children: [
                 row(Icons.place_outlined, 'Lokasi', m.placeName ?? (m.lat == null ? 'Lokasi tidak tersedia' : '${m.lat!.toStringAsFixed(5)}, ${m.lng!.toStringAsFixed(5)}')),
                 if (sched != null) row(Icons.event_outlined, 'Jadwal', '${sched.timeLabel}${sched.endMin == null ? '' : ' - ${minToHm(sched.endMin!)}'} (${sched.title})'),
+                if (m.isSchool) row(Icons.category_outlined, 'Kategori', docCategoryLabel(m.category)),
                 if (showDesc) row(Icons.notes, 'Deskripsi', m.description),
                 if (photoNote != null) row(Icons.photo_outlined, 'Foto', photoNote),
               ]),

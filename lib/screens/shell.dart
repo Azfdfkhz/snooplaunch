@@ -6,14 +6,15 @@ import '../core/widgets.dart';
 import '../services/island_service.dart';
 import '../services/launcher_service.dart';
 import 'app_drawer_screen.dart';
-import 'home_screen.dart';
+import '../features/tasks/screens/tasks_screen.dart';
+import '../features/timetable/screens/timetable_screen.dart';
 import 'memories_screen.dart';
-import 'reminders_screen.dart';
-import 'schedule_screen.dart';
+import 'school_home_screen.dart';
 import 'settings_screen.dart';
 
 /// Root launcher: satu rangkaian halaman horizontal, digeser kiri/kanan (gaya iOS):
-///   1 Beranda | 2 Jadwal | 3 Memories | 4 Pengingat | 5 Pengaturan
+///   1 Beranda | 2 Jadwal | 3 Tugas | 4 Memories | 5 Pengaturan  (SNOOP School Life 2.0)
+/// Pengingat, Kalender, Catatan, Statistik, QR Sekolah, dan Arsip PKL dibuka dari Menu di Beranda dan dari Pengaturan.
 /// Geser ke kiri dari Beranda membuka Jadwal, dan seterusnya. Navbar kapsul hanya tampil di halaman 2–5.
 /// Update 1.5.1: App Drawer BUKAN lagi halaman geser; ia muncul sebagai popup dari tombol App Drawer di dock ([showAppDrawerPopup]).
 /// Nomor halaman logis (1..5) dipertahankan agar `onGoTo(n)` di Home tidak berubah; indeks PageView = nomor logis - 1.
@@ -62,6 +63,7 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
     switch (state) {
       case AppLifecycleState.resumed:
         s.onAppResumed();
+        s.reconcileSchoolReminders(); // tanggal bisa berganti: perbarui pengingat tenggat/acara
       case AppLifecycleState.inactive:
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:
@@ -132,10 +134,10 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
               _visited.add(i + 1);
             }),
             children: [
-              HomeScreen(onGoTo: _goTo, onOpenDrawer: _openDrawer),
-              _tab(2, const ScheduleScreen()),
-              _tab(3, const MemoriesScreen()),
-              _tab(4, const RemindersView()),
+              SchoolHomeScreen(onGoTo: _goTo, onOpenDrawer: _openDrawer),
+              _tab(2, const TimetableScreen()),
+              _tab(3, const TasksScreen()),
+              _tab(4, const MemoriesScreen()),
               _tab(5, const SettingsView()),
             ],
           ),

@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart' show IconData;
 import '../../../core/attendance_session.dart';
 import '../../../core/models.dart';
 import '../../../core/theme.dart' show kMonths, minToHm, two;
@@ -95,7 +96,9 @@ class Milestone {
   final MilestoneKind kind;
   final String label;
   final MilestoneState state;
-  const Milestone(this.kind, this.label, this.state);
+  /// 2.0: ikon khusus (Home School Life). null = ikon bawaan menurut [kind].
+  final IconData? icon;
+  const Milestone(this.kind, this.label, this.state, {this.icon});
 
   String get stateLabel => switch (state) {
         MilestoneState.upcoming => 'belum',

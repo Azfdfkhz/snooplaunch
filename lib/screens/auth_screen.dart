@@ -6,7 +6,7 @@ import '../core/theme.dart';
 import '../core/widgets.dart';
 import '../main.dart';
 
-/// Masuk / daftar akun cloud (Supabase). Diperlukan agar absensi tersimpan online.
+/// Masuk / daftar akun cloud (Supabase). Diperlukan agar profil dan dokumentasi tersimpan online.
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
   @override
@@ -81,9 +81,9 @@ class _AuthScreenState extends State<AuthScreen> {
       body: ListView(padding: const EdgeInsets.all(S.x5), children: [
         const Center(child: SnoopMark(size: 88)),
         const SizedBox(height: S.x4),
-        Text('Absensi tersimpan online', textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium),
+        Text('Data tersimpan online', textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: S.x1),
-        Text('Masuk agar absensi dan dokumentasi tersinkron ke server.', textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
+        Text('Masuk agar profil dan dokumentasi sekolah tersinkron ke server.', textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: S.x5),
         if (!s.backendConfigured)
           SnoopCard(

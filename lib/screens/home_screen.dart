@@ -10,8 +10,6 @@ import '../core/pixel_font.dart';
 import '../core/shapes.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
-import '../services/qr_store.dart';
-import 'qr_screen.dart';
 import '../core/widgets.dart';
 import '../main.dart';
 import '../features/home/controllers/home_controller.dart';
@@ -32,6 +30,9 @@ import 'google_search_sheet.dart';
 import 'streak_screen.dart';
 import 'memories_screen.dart';
 
+/// LEGACY (PKL): tidak lagi dipakai Shell sejak 2.0 (digantikan `SchoolHomeScreen`). Dipertahankan karena memuat alur
+/// absensi PKL yang menjadi bagian arsip; jangan dihapus sebelum migrasi terverifikasi (PRD 18).
+///
 /// Home launcher (Update 1.5.0): Retro Industrial Interactive Dashboard (PRD SNOOP Launch v1.2).
 ///
 /// Komposisi asimetris mengikuti dua gambar referensi: header tanggal piksel, panel absensi cyan yang dapat mengembang
@@ -145,7 +146,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         _at('head', 0, x(18), y(44), HomeHeader(now: now, scale: k)),
-        _at('mode', 1, x(14), y(44) + 100 * k, ModeChip(school: s.schoolMode, scale: k, onTap: () => s.setMode(s.schoolMode ? 'pkl' : 'sekolah'))),
         _at(
           'timeline',
           2,
@@ -249,7 +249,6 @@ class _HomeScreenState extends State<HomeScreen> {
       };
 
   Widget _absenShape(AppState s, AttendanceSession ss, double d, double k) {
-    if (s.schoolMode) return _schoolQrShape(d, k);
     final face = attendanceFace(
       phase: ss.phase,
       attendance: s.today,
@@ -259,27 +258,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return AttendanceShape(diameter: d, scale: k, face: face, semanticsLabel: _absenLabel(ss, s), onTap: _openAttendancePopup);
   }
 
-  /// Mode Sekolah: Attendance Shape menjadi QR Absen (fitur 1.2.8). Tanpa popup otomatis.
-  Widget _schoolQrShape(double d, double k) => ListenableBuilder(
-        listenable: QrStore.instance,
-        builder: (context, _) {
-          final store = QrStore.instance;
-          if (!store.loaded) store.load();
-          final n = store.items.length;
-          return AttendanceShape(
-            diameter: d,
-            scale: k,
-            face: AttendanceFace('QR', n == 0 ? 'Kosong' : '$n QR'),
-            semanticsLabel: n == 0 ? 'QR Absen Sekolah: belum ada QR. Ketuk untuk menyimpan' : (n == 1 ? 'QR Absen Sekolah. Ketuk untuk menampilkan' : 'QR Absen Sekolah: $n QR tersimpan. Ketuk untuk memilih'),
-            onTap: () => _push(n == 1 ? QrViewerScreen(qr: store.items.first) : const QrScreen()),
-          );
-        },
-      );
-
   /// Popup otomatis: hanya pada jendela absen yang berlaku, di hari yang punya jadwal absensi (Senin sampai Jumat
   /// untuk absen masuk), di Home yang sedang terlihat, dan paling banyak sekali per fase per hari.
   void _maybeAutoPopup(AppState s, DateTime now, AttendanceSession ss) {
-    if (_popupOpen || _autoChecking || s.schoolMode || !ss.allowsAutoPopup) return;
+    if (_popupOpen || _autoChecking || !ss.allowsAutoPopup) return;
     final route = ModalRoute.of(context);
     if (route == null || !route.isCurrent) return; // ada layar lain di atas Home
     _autoChecking = true;

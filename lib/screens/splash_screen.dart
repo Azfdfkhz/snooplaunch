@@ -37,7 +37,7 @@ class SplashScreen extends StatelessWidget {
               const Spacer(),
               Text('SNOOP', style: TextStyle(fontSize: 52, fontWeight: FontWeight.w900, color: C.text, letterSpacing: 4, height: 1)),
               const SizedBox(height: S.x2),
-              Text('Launcher untuk PKL-mu.\nAbsen, jadwal, dan aplikasi dalam satu layar utama.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: C.text2, height: 1.4)),
+              Text('Launcher untuk sekolahmu.\nJadwal, tugas, dan aplikasi dalam satu layar utama.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: C.text2, height: 1.4)),
               const SizedBox(height: S.x6),
               SizedBox(
                 width: double.infinity,

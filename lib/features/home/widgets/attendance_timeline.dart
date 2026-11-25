@@ -113,7 +113,7 @@ class AttendanceTimeline extends StatelessWidget {
         width: d,
         height: d,
         decoration: BoxDecoration(shape: BoxShape.circle, color: fill, border: Border.all(color: ring, width: bw)),
-        child: Icon(_icon(m.kind), size: d * .6, color: icon),
+        child: Icon(m.icon ?? _icon(m.kind), size: d * .6, color: icon),
       ),
     );
   }

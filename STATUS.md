@@ -1,3 +1,5 @@
+> **SNOOP School Life 2.0.0**: pivot PKL -> sekolah. Lihat UPDATE_2_0_0_REPORT.md (matriks PRD, batasan, langkah verifikasi). Tab sekarang: Beranda | Jadwal | Tugas | Memories | Pengaturan; data PKL menjadi Arsip PKL read-only.
+
 > Update 1.5.1: App Drawer popup, profil tersimpan di cloud, Memories (data + UI), Sabtu/Minggu libur. Lihat UPDATE_1_5_1_REPORT.md.
 
 > Update 1.2.8 (di atas Braun v2): kamera belakang tanpa mirror, tema gelap Braun, status bar kustom, logo dari SVG, mode Sekolah + QR absen. Lihat UPDATE_1_2_8_REPORT.md.

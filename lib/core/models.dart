@@ -64,20 +64,31 @@ class Reminder {
   final String id;
   String title;
   String detail;
-  String type; // air | istirahat | absen | dokumentasi | kustom
+  /// 2.0: class_reminder | assignment_due | exam_reminder | event_reminder | study_reminder | personal | custom.
+  /// Data lama (air | istirahat | absen | dokumentasi | kustom) dipetakan eksplisit saat migrasi; lihat [legacyType].
+  String type;
   int atMin;
   bool enabled;
   /// 0 = sekali sehari. >0 = berulang tiap N menit dari [atMin] sampai jam pulang.
   int intervalMin;
   /// true = hanya Senin sampai Jumat.
   bool workdaysOnly;
-  Reminder({required this.id, required this.title, required this.detail, required this.type, required this.atMin, this.enabled = true, this.intervalMin = 0, this.workdaysOnly = false});
+  /// 2.0: tipe pengingat sebelum dipetakan ke tipe akademik (air | istirahat | absen | dokumentasi | kustom). Dipertahankan agar tidak ada informasi hilang.
+  String? legacyType;
+  /// 2.0: sumber pengingat otomatis (timetable_entry | school_task | academic_event) dan id-nya. null = pengingat manual.
+  String? sourceType;
+  String? sourceId;
+  Reminder({required this.id, required this.title, required this.detail, required this.type, required this.atMin, this.enabled = true, this.intervalMin = 0, this.workdaysOnly = false, this.legacyType, this.sourceType, this.sourceId});
   /// Ringkasan yang ditampilkan di daftar pengingat.
   String get summary => '${workdaysOnly ? 'Senin–Jumat' : 'Setiap hari'} · ${intervalMin > 0 ? 'tiap ${intervalMin ~/ 60} jam' : 'sekali sehari'}';
-  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'detail': detail, 'type': type, 'at': atMin, 'enabled': enabled, 'interval': intervalMin, 'workdays': workdaysOnly};
+  Map<String, dynamic> toJson() => {
+        'id': id, 'title': title, 'detail': detail, 'type': type, 'at': atMin, 'enabled': enabled, 'interval': intervalMin, 'workdays': workdaysOnly,
+        'legacyType': legacyType, 'sourceType': sourceType, 'sourceId': sourceId,
+      };
   factory Reminder.fromJson(Map<String, dynamic> j) => Reminder(
       id: j['id'], title: j['title'], detail: j['detail'], type: j['type'], atMin: j['at'], enabled: j['enabled'] ?? true,
-      intervalMin: (j['interval'] as int?) ?? 0, workdaysOnly: (j['workdays'] as bool?) ?? false);
+      intervalMin: (j['interval'] as int?) ?? 0, workdaysOnly: (j['workdays'] as bool?) ?? false,
+      legacyType: j['legacyType'] as String?, sourceType: j['sourceType'] as String?, sourceId: j['sourceId'] as String?);
 }
 
 /// Urutan enum disimpan sebagai indeks di data lama: nilai baru hanya boleh ditambah di akhir.
@@ -102,16 +113,26 @@ class Memory {
   String? driveFileId;
   /// Pesan kegagalan unggah terakhir (untuk ditampilkan, bukan kode mentah).
   String? uploadError;
-  Memory({required this.id, required this.title, this.scheduleId, this.photoPath, required this.capturedAt, this.takenAt, this.lat, this.lng, this.accuracy, this.placeName, this.description = '', this.upload = UploadStatus.pending, this.driveUrl, this.driveFileId, this.uploadError});
+  /// 2.0: ruang kerja pemilik dokumentasi: 'school' atau 'pkl'. Data lama TANPA penanda dianggap 'pkl' (PRD 4.6, 7.8).
+  String workspace;
+  /// 2.0: kategori dokumentasi sekolah (classroom | school_event | assignment | project | extracurricular | personal | other).
+  String? category;
+  String? subjectId;
+  String? taskId;
+  Memory({required this.id, required this.title, this.scheduleId, this.photoPath, required this.capturedAt, this.takenAt, this.lat, this.lng, this.accuracy, this.placeName, this.description = '', this.upload = UploadStatus.pending, this.driveUrl, this.driveFileId, this.uploadError, this.workspace = 'pkl', this.category, this.subjectId, this.taskId});
+  bool get isSchool => workspace == 'school';
+  bool get isPkl => !isSchool;
   String get meta => '${capturedAt.day} ${kMonths[capturedAt.month - 1].substring(0, 3)} · ${hm(capturedAt)} WIB';
   Map<String, dynamic> toJson() => {
         'id': id, 'title': title, 'scheduleId': scheduleId, 'photo': photoPath, 'at': capturedAt.toIso8601String(), 'taken': takenAt?.toIso8601String(),
         'lat': lat, 'lng': lng, 'acc': accuracy, 'place': placeName, 'desc': description, 'upload': upload.index, 'drive': driveUrl, 'driveId': driveFileId, 'uploadErr': uploadError,
+        'ws': workspace, 'cat': category, 'subjectId': subjectId, 'taskId': taskId,
       };
   factory Memory.fromJson(Map<String, dynamic> j) => Memory(
       id: j['id'], title: j['title'], scheduleId: j['scheduleId'], photoPath: j['photo'], capturedAt: DateTime.parse(j['at']),
       takenAt: j['taken'] == null ? null : DateTime.tryParse(j['taken']),
-      lat: (j['lat'] as num?)?.toDouble(), lng: (j['lng'] as num?)?.toDouble(), accuracy: (j['acc'] as num?)?.toDouble(), placeName: j['place'], description: j['desc'] ?? '', upload: _status(j['upload']), driveUrl: j['drive'], driveFileId: j['driveId'] ?? _idFromUrl(j['drive']), uploadError: j['uploadErr']);
+      lat: (j['lat'] as num?)?.toDouble(), lng: (j['lng'] as num?)?.toDouble(), accuracy: (j['acc'] as num?)?.toDouble(), placeName: j['place'], description: j['desc'] ?? '', upload: _status(j['upload']), driveUrl: j['drive'], driveFileId: j['driveId'] ?? _idFromUrl(j['drive']), uploadError: j['uploadErr'],
+      workspace: j['ws'] == 'school' ? 'school' : 'pkl', category: j['cat'] as String?, subjectId: j['subjectId'] as String?, taskId: j['taskId'] as String?);
 
   /// 'uploading' yang tersimpan berarti aplikasi mati saat mengunggah: anggap belum selesai.
   static UploadStatus _status(dynamic raw) {
